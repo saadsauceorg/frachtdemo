@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="fr" class="overflow-x-hidden">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Console Design Fracht Project - Validation Conception Habillage Mural</title>
+    
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://fracht-project.com/">
+    <meta property="og:title" content="Console Design Fracht Project - Validation Conception Habillage Mural">
+    <meta property="og:description" content="Console de validation pour la conception et l'habillage mural. Porteur projet Design & Impression : Abilis Auto Africa. Situé au C - Bureau N° 21,22,23,24,25 ET 26, 5 EME ETAGE, AL-GHARB Center, Bd Moulay Ismaïl, Casablanca 20300, Maroc. Contact : Saad 212663801852">
+    <meta property="og:image" content="https://ibvmkhmjgpwwxkngllti.supabase.co/storage/v1/object/public/files/fracht-console-cover.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://fracht-project.com/">
+    <meta name="twitter:title" content="Console Design Fracht Project - Validation Conception Habillage Mural">
+    <meta name="twitter:description" content="Console de validation pour la conception et l'habillage mural. Porteur projet Design & Impression : Abilis Auto Africa. Situé au C - Bureau N° 21,22,23,24,25 ET 26, 5 EME ETAGE, AL-GHARB Center, Bd Moulay Ismaïl, Casablanca 20300, Maroc. Contact : Saad 212663801852">
+    <meta name="twitter:image" content="https://ibvmkhmjgpwwxkngllti.supabase.co/storage/v1/object/public/files/fracht-console-cover.png">
+    
+    <!-- Informations de contact et localisation -->
+    <meta name="description" content="Console Design Fracht Project - Validation Conception Habillage Mural. Porteur projet Design & Impression : Abilis Auto Africa. Localisation : C - Bureau N° 21,22,23,24,25 ET 26, 5 EME ETAGE, AL-GHARB Center, Bd Moulay Ismaïl, Casablanca 20300, Maroc. Contact : Saad 212663801852">
+    <meta name="geo.position" content="33.5995764582613;-7.569115899999971">
+    <meta name="geo.region" content="MA-CAS">
+    <meta name="geo.placename" content="Casablanca">
+    <link rel="canonical" href="https://maps.app.goo.gl/C2sSMoRCDSdEGrN19">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'fracht-blue': '#0B3C5D',
+                        'fracht-blue-dark': '#082A42',
+                        'fracht-blue-light': '#0E4A6F',
+                        'fracht-blue-accent': '#1E5A7F',
+                        'fracht-cream': '#FAFAF8',
+                        'fracht-white': '#FEFEFC',
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/styles/fracht.css">
+    <style>
+        :root {
+            --grid-size: 32px;
+            /* Grille gris lisible */
+            --grid-color: rgba(128, 128, 128, 0.15);
+            --brand-blue: #1e3a8a;
+            --off-white: #fdfdfd;
+            --fracht-blue: #0B3C5D;
+            --fracht-blue-dark: #082A42;
+            --fracht-blue-light: #0E4A6F;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+            background-color: var(--off-white);
+            color: #0f172a;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            width: 100%;
+        }
+        .grid-bg {
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: var(--grid-size) var(--grid-size);
+            background-attachment: fixed;
+        }
+        .executive-border {
+            border: 1px solid #e5e9f0;
+        }
+        #root {
+            width: 100%;
+            overflow-x: hidden;
+        }
+        input:focus, textarea:focus {
+            border-color: var(--brand-blue) !important;
+            outline: none !important;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Animation subtile pour les champs de saisie */
+        .underline-input-container {
+            position: relative;
+            background: white;
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="grid-bg">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
