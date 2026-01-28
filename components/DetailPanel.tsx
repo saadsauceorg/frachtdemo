@@ -3,11 +3,8 @@ import { motion } from 'framer-motion';
 import { DesignItem } from '../types/fracht';
 import { 
   HiX, 
-  HiCheckCircle, 
-  HiXCircle, 
   HiMicrophone,
   HiClock,
-  HiUser,
   HiPlus,
   HiLocationMarker
 } from 'react-icons/hi';
@@ -16,31 +13,29 @@ import { Waveform } from './Waveform';
 import { LocationSelector } from './LocationSelector';
 import { 
   updateDesignTitle, 
-  updateDesignStatus, 
   addComment, 
   getTags, 
+  createTag,
   addTagToDesign, 
   removeTagFromDesign,
   addVersion,
   updateRating,
-  uploadImageAndGetDimensions,
-  createDesign
+  updateDesignLocation
 } from '../services/designs';
 import { supabase } from '../services/supabase';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 interface DetailPanelProps {
-  item: DesignItem | null;
+  item: DesignItem;
   isOpen: boolean;
   onClose: () => void;
-  onUpdate?: () => void;
-  onDesignCreated?: (newDesign: DesignItem) => void;
+  onUpdate?: (designId: string) => void;
+  onDesignUpdate?: (design: DesignItem) => void;
 }
 
-export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose, onUpdate, onDesignCreated }) => {
-  const isNewDesign = item === null;
+export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose, onUpdate, onDesignUpdate }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [title, setTitle] = useState(item?.title || '');
+  const [title, setTitle] = useState(item.title);
   const [commentText, setCommentText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -48,29 +43,42 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
   const [availableTags, setAvailableTags] = useState<Array<{ id: string; name: string; color: string }>>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [showLocationSelector, setShowLocationSelector] = useState(false);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null | undefined>(item?.locationId ?? null);
-  const [locationData, setLocationData] = useState(item?.locationData);
-  const [rating, setRating] = useState<number | null>(item?.rating || null);
+  const [newTagName, setNewTagName] = useState('');
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null | undefined>(item.locationId);
+  const [locationData, setLocationData] = useState(item.locationData);
+  const [rating, setRating] = useState<number | null>(item.rating || null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const titleDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (item) {
-      setTitle(item.title);
-      setSelectedLocationId(item.locationId);
-      setLocationData(item.locationData);
-      setRating(item.rating || null);
-    } else {
-      // Mode nouveau design
-      setTitle('');
-      setSelectedLocationId(null);
-      setLocationData(undefined);
-      setRating(null);
-    }
+    setTitle(item.title);
+    setSelectedLocationId(item.locationId);
+    setLocationData(item.locationData);
+    setRating(item.rating || null);
+    setIsEditingTitle(false); // Réinitialiser l'état d'édition
     loadTags();
+    
+    // Nettoyer le debounce si existant
+    if (titleDebounceRef.current) {
+      clearTimeout(titleDebounceRef.current);
+      titleDebounceRef.current = null;
+    }
   }, [item]);
+
+  // Nettoyer le debounce au démontage
+  useEffect(() => {
+    return () => {
+      if (titleDebounceRef.current) {
+        clearTimeout(titleDebounceRef.current);
+        titleDebounceRef.current = null;
+      }
+    };
+  }, []);
 
   const loadTags = async () => {
     try {
@@ -81,46 +89,83 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
     }
   };
 
-  const handleTitleSave = async () => {
-    if (isNewDesign) {
-      // En mode nouveau design, le titre sera sauvegardé lors de l'upload
-      setIsEditingTitle(false);
-      return;
+  const handleTitleSave = async (skipDebounce = false) => {
+    // Annuler le debounce précédent si existant
+    if (titleDebounceRef.current) {
+      clearTimeout(titleDebounceRef.current);
+      titleDebounceRef.current = null;
     }
-    try {
-      await updateDesignTitle(item!.id, title);
-      setIsEditingTitle(false);
-      toast.success('Titre mis à jour');
-      onUpdate?.();
-    } catch (error) {
-      toast.error('Erreur lors de la mise à jour');
-      console.error(error);
+
+    if (!skipDebounce) {
+      // Utiliser debounce pour éviter les syncs multiples
+      titleDebounceRef.current = setTimeout(async () => {
+        if (title.trim() === item.title.trim()) {
+          setIsEditingTitle(false);
+          return;
+        }
+        
+        try {
+          await updateDesignTitle(item.id, title.trim());
+          setIsEditingTitle(false);
+          toast.success('Titre mis à jour');
+          // Mettre à jour l'état local directement
+          const updated = { ...item, title: title.trim() };
+          onDesignUpdate?.(updated);
+          onUpdate?.(item.id);
+        } catch (error) {
+          toast.error('Erreur lors de la mise à jour');
+          console.error(error);
+          // Restaurer le titre original en cas d'erreur
+          setTitle(item.title);
+        }
+      }, 800); // 800ms de debounce
+    } else {
+      // Sauvegarde immédiate (Enter ou Escape)
+      if (title.trim() === item.title.trim()) {
+        setIsEditingTitle(false);
+        return;
+      }
+      
+      try {
+        await updateDesignTitle(item.id, title.trim());
+        setIsEditingTitle(false);
+        toast.success('Titre mis à jour');
+        const updated = { ...item, title: title.trim() };
+        onDesignUpdate?.(updated);
+        onUpdate?.(item.id);
+      } catch (error) {
+        toast.error('Erreur lors de la mise à jour');
+        console.error(error);
+        setTitle(item.title);
+      }
     }
   };
 
-  const handleStatusChange = async (status: 'approved' | 'review') => {
-    if (isNewDesign) return;
-    try {
-      await updateDesignStatus(item!.id, status);
-      toast.success(status === 'approved' ? 'Design approuvé' : 'Modifications demandées');
-      onUpdate?.();
-      onClose();
-    } catch (error) {
-      toast.error('Erreur lors de la mise à jour');
-      console.error(error);
-    }
-  };
 
   const handleAddComment = async () => {
-    if (isNewDesign) return;
     if (!commentText.trim() && !audioUrl) return;
 
     try {
-      await addComment(item!.id, commentText || undefined, audioUrl || undefined);
+      const comment = await addComment(item.id, commentText || undefined, audioUrl || undefined);
       toast.success('Commentaire ajouté');
+      
+      // Mettre à jour l'état local avec le nouveau commentaire
+      const newFeedback = {
+        id: comment.id,
+        author: comment.author,
+        timestamp: new Date(comment.created_at).toISOString().split('T')[0],
+        text: comment.text || undefined,
+        audioUrl: comment.audio_url || undefined,
+      };
+      const updated = {
+        ...item,
+        feedback: [newFeedback, ...item.feedback],
+      };
+      onDesignUpdate?.(updated);
+      
       setCommentText('');
       setAudioUrl(null);
-      onUpdate?.();
+      onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de l\'ajout du commentaire');
       console.error(error);
@@ -128,22 +173,80 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
   };
 
   const handleTagToggle = async (tagId: string) => {
-    if (!item) return; // Protection contre les nouveaux designs
-    
     const isTagged = item.tags.some((t) => t.id === tagId);
     
     try {
       if (isTagged) {
         await removeTagFromDesign(item.id, tagId);
         toast.success('Tag retiré');
+        // Mettre à jour l'état local directement
+        const updated = {
+          ...item,
+          tags: item.tags.filter((t) => t.id !== tagId),
+        };
+        onDesignUpdate?.(updated);
       } else {
         await addTagToDesign(item.id, tagId);
         toast.success('Tag ajouté');
+        // Trouver le tag dans availableTags pour l'ajouter
+        const tagToAdd = availableTags.find((t) => t.id === tagId);
+        if (tagToAdd) {
+          const updated = {
+            ...item,
+            tags: [
+              ...item.tags,
+              {
+                id: tagToAdd.id,
+                label: tagToAdd.name,
+                color: tagToAdd.color,
+              },
+            ],
+          };
+          onDesignUpdate?.(updated);
+        }
       }
-      onUpdate?.();
+      onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de la modification du tag');
       console.error(error);
+    }
+  };
+
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) return;
+    
+    setIsCreatingTag(true);
+    try {
+      // Générer une couleur aléatoire pour le nouveau tag
+      const colors = ['#0B3C5D', '#4A90E2', '#E94B3C', '#9B59B6', '#27AE60', '#F5A623', '#16A085', '#E67E22'];
+      const randomColor = colors[Math.floor(Math.random() * colors.length)];
+      
+      const newTag = await createTag(newTagName.trim(), randomColor);
+      await loadTags(); // Recharger les tags
+      
+      // Ajouter automatiquement le tag au design
+      await addTagToDesign(item.id, newTag.id);
+      toast.success('Tag créé et ajouté');
+      
+      const updated = {
+        ...item,
+        tags: [
+          ...item.tags,
+          {
+            id: newTag.id,
+            label: newTag.name,
+            color: newTag.color,
+          },
+        ],
+      };
+      onDesignUpdate?.(updated);
+      setNewTagName('');
+      onUpdate?.(item.id);
+    } catch (error) {
+      toast.error('Erreur lors de la création du tag');
+      console.error(error);
+    } finally {
+      setIsCreatingTag(false);
     }
   };
 
@@ -193,44 +296,38 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
     try {
-      if (isNewDesign) {
-        // ✅ Mode nouveau design - Upload et création
-        const { url, width, height, aspectRatio } = await uploadImageAndGetDimensions(file);
-        
-        // Créer le design avec titre optionnel
-        const designTitle = title.trim() || file.name.replace(/\.[^/.]+$/, '');
-        const newDesign = await createDesign(
-          designTitle,
-          url,
-          aspectRatio,
-          width,
-          height
-        );
-        
-        toast.success('Design ajouté avec succès');
-        onDesignCreated?.(newDesign);
-        onClose();
-      } else {
-        // Mode existant - Ajouter une version
-        if (!item) return; // Protection supplémentaire
-        
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${item.id}/${Date.now()}.${fileExt}`;
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('designs')
-          .upload(fileName, file);
+      // Upload vers Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${item.id}/${Date.now()}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('files')
+        .upload(fileName, file);
 
-        if (uploadError) throw uploadError;
+      if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('designs')
-          .getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage
+        .from('files')
+        .getPublicUrl(fileName);
 
-        await addVersion(item.id, publicUrl, 'Nouvelle version uploadée');
-        toast.success('Version uploadée avec succès');
-        onUpdate?.();
-      }
+      const version = await addVersion(item.id, publicUrl, 'Nouvelle version uploadée');
+      toast.success('Version uploadée avec succès');
+      
+      // Mettre à jour l'état local avec la nouvelle version
+      const newVersion = {
+        id: version.id,
+        version: version.version_number.toString(),
+        timestamp: new Date(version.created_at).toISOString().split('T')[0],
+        author: version.author,
+        changes: version.changes || 'Nouvelle version',
+      };
+      const updated = {
+        ...item,
+        versionHistory: [newVersion, ...item.versionHistory],
+      };
+      onDesignUpdate?.(updated);
+      
+      onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de l\'upload');
       console.error(error);
@@ -273,7 +370,12 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
 
   const handleLocationSelect = async (locationId: string | null) => {
     setSelectedLocationId(locationId);
+    
+    // Mettre à jour dans Supabase
+    await updateDesignLocation(item.id, locationId);
+    
     // Si une location est sélectionnée, charger ses données
+    let newLocationData = undefined;
     if (locationId) {
       try {
         const { data } = await supabase
@@ -283,12 +385,13 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
           .single();
         
         if (data) {
-          setLocationData({
+          newLocationData = {
             id: data.id,
             name: data.name,
             imageUrl: data.image_url,
             description: data.description,
-          });
+          };
+          setLocationData(newLocationData);
         }
       } catch (error) {
         console.error('Error loading location data:', error);
@@ -296,24 +399,33 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
     } else {
       setLocationData(undefined);
     }
-    // Recharger les données complètes
-    if (onUpdate) {
-      onUpdate();
-    }
+    
+    // Mettre à jour l'état local directement
+    const updated = {
+      ...item,
+      locationId,
+      locationData: newLocationData,
+    };
+    onDesignUpdate?.(updated);
+    onUpdate?.(item.id);
   };
 
   const handleRatingClick = async (newRating: number) => {
-    if (isNewDesign) return;
     const finalRating = rating === newRating ? null : newRating;
     setRating(finalRating);
     try {
-      await updateRating(item!.id, finalRating);
+      await updateRating(item.id, finalRating);
       toast.success(finalRating ? `Note: ${finalRating} étoile${finalRating > 1 ? 's' : ''}` : 'Note retirée');
-      onUpdate?.();
+      
+      // Mettre à jour l'état local directement
+      const updated = { ...item, rating: finalRating };
+      onDesignUpdate?.(updated);
+      
+      onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de la mise à jour');
       console.error(error);
-      setRating(item!.rating || null);
+      setRating(item.rating || null);
     }
   };
 
@@ -332,19 +444,37 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       onDrop={handleDrop}
       onDragOver={(e) => e.preventDefault()}
     >
-      {/* Sticky Header */}
-      <div className="sticky top-0 glass-fracht border-b border-fracht-blue/10 px-5 py-4 flex items-center justify-between z-10">
+      {/* Sticky Header - Compact */}
+      <div className="sticky top-0 glass-fracht border-b border-fracht-blue/10 px-4 py-3 flex items-center justify-between z-10">
         {isEditingTitle ? (
           <input
+            ref={titleInputRef}
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleSave}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              // Ne pas sauvegarder automatiquement sur chaque changement
+            }}
+            onBlur={() => {
+              // Ne sauvegarder que si le focus est vraiment perdu (pas juste un retour à la ligne)
+              setTimeout(() => {
+                if (document.activeElement !== titleInputRef.current) {
+                  handleTitleSave();
+                }
+              }, 100);
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleTitleSave();
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleTitleSave(true); // Sauvegarde immédiate
+              }
               if (e.key === 'Escape') {
-                setTitle(item?.title || '');
+                setTitle(item.title);
                 setIsEditingTitle(false);
+                if (titleDebounceRef.current) {
+                  clearTimeout(titleDebounceRef.current);
+                  titleDebounceRef.current = null;
+                }
               }
             }}
             className="flex-1 text-sm font-semibold text-gray-900 fracht-heading bg-transparent border-b-2 border-fracht-blue focus:outline-none"
@@ -352,106 +482,37 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
           />
         ) : (
           <h2 
-            className={`text-sm font-semibold text-gray-900 truncate pr-2 fracht-heading ${isNewDesign ? '' : 'cursor-text hover:text-fracht-blue transition-colors'}`}
-            onClick={() => !isNewDesign && setIsEditingTitle(true)}
+            className="text-sm font-semibold text-gray-900 truncate pr-2 fracht-heading cursor-text hover:text-fracht-blue transition-colors"
+            onClick={() => setIsEditingTitle(true)}
           >
-            {isNewDesign ? 'Nouveau Design' : title}
+            {title}
           </h2>
         )}
         <button
           onClick={onClose}
-          className="p-1.5 hover:bg-fracht-blue-soft rounded-lg transition-all duration-300 flex-shrink-0 group"
+          className="p-1 hover:bg-fracht-blue-soft rounded transition-all duration-200 flex-shrink-0 group"
           aria-label="Fermer"
         >
-          {/* @ts-ignore */}
-          <HiX className="w-5 h-5 text-gray-600 group-hover:text-fracht-blue transition-colors" />
+          <HiX className="w-3.5 h-3.5 text-gray-600 group-hover:text-fracht-blue transition-colors" {...({} as any)} />
         </button>
       </div>
 
-      {/* Scrollable Content */}
+      {/* Scrollable Content - Compact */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-5 space-y-5">
-          {/* Image Preview ou Zone de Drop */}
-          {isNewDesign ? (
-            <div 
-              className="rounded-xl overflow-hidden bg-gray-100 shadow-sm border-2 border-dashed border-gray-300 min-h-[300px] flex items-center justify-center"
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-            >
-              {isUploading ? (
-                <div className="text-center">
-                  <div className="w-12 h-12 border-4 border-fracht-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p className="text-gray-600 text-sm">Upload en cours...</p>
-                </div>
-              ) : (
-                <div className="text-center p-8">
-                  {/* @ts-ignore */}
-                  <FiUpload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 font-semibold mb-2">Glissez-déposez une image</p>
-                  <p className="text-gray-400 text-sm">ou</p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-4 px-4 py-2 bg-fracht-blue text-white rounded-lg hover:bg-fracht-blue-dark transition-colors"
-                  >
-                    Sélectionner un fichier
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-xl overflow-hidden bg-gray-100 shadow-sm">
-              <img
-                src={item.imageUrl}
-                alt={item.title}
-                className="w-full h-auto object-contain"
-              />
-            </div>
-          )}
-
-          {/* Nom de l'affiche - Champ éditable */}
-          <div>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block fracht-label">
-              Nom de l'affiche
-            </label>
-            {isEditingTitle ? (
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={handleTitleSave}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleTitleSave();
-                  if (e.key === 'Escape') {
-                    setTitle(item?.title || '');
-                    setIsEditingTitle(false);
-                  }
-                }}
-                className="w-full px-3 py-2 bg-white border border-fracht-blue/20 rounded-lg text-sm text-gray-900 fracht-title focus:outline-none focus:ring-2 focus:ring-fracht-blue/30"
-                autoFocus
-              />
-            ) : (
-              <div
-                onClick={() => setIsEditingTitle(true)}
-                className="w-full px-3 py-2 bg-white/80 border border-fracht-blue/20 rounded-lg text-sm text-gray-900 fracht-title cursor-text hover:border-fracht-blue/40 transition-colors"
-              >
-                {title || 'Cliquez pour modifier le nom'}
-              </div>
-            )}
+        <div className="p-4 space-y-3">
+          {/* Image Preview - Compact */}
+          <div className="rounded-lg overflow-hidden bg-gray-100 shadow-sm">
+            <img
+              src={item.imageUrl}
+              alt={item.title}
+              className="w-full h-auto object-contain max-h-[300px]"
+            />
           </div>
 
-          {/* Star Rating */}
-          <div>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block fracht-label">
-              Note
-            </label>
-            <div className="flex items-center gap-1">
+          {/* Actions rapides - Compact inline */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Rating - Compact */}
+            <div className="flex items-center gap-0.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
@@ -464,7 +525,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                   aria-label={`Noter ${star} étoile${star > 1 ? 's' : ''}`}
                 >
                   <svg
-                    className="w-5 h-5"
+                    className="w-3 h-3"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                     xmlns="http://www.w3.org/2000/svg"
@@ -473,69 +534,31 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                   </svg>
                 </button>
               ))}
-              {rating && (
-                <span className="ml-2 text-xs text-gray-600 fracht-title">
-                  {rating}/5
-                </span>
-              )}
             </div>
+
+            {/* Emplacement - Action rapide */}
+            <button
+              onClick={() => setShowLocationSelector(true)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                locationData
+                  ? 'bg-fracht-blue/10 text-fracht-blue border border-fracht-blue/20'
+                  : 'bg-white/80 border border-fracht-blue/20 text-gray-600 hover:border-fracht-blue/40'
+              }`}
+            >
+              <HiLocationMarker className="w-3 h-3" {...({} as any)} />
+              {locationData ? locationData.name : 'Emplacement'}
+            </button>
           </div>
 
-          {/* Emplacement - Preview et sélecteur */}
-          {!isNewDesign && (
-          <div>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block fracht-label">
-              Emplacement
-            </label>
-            {locationData ? (
-              <div className="flex items-center gap-3">
-                <div className="relative w-16 h-20 rounded-lg overflow-hidden bg-gray-100 border border-fracht-blue/20 flex-shrink-0">
-                  <img
-                    src={locationData.imageUrl}
-                    alt={locationData.name}
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 fracht-title truncate">
-                    {locationData.name}
-                  </p>
-                  {locationData.description && (
-                    <p className="text-xs text-gray-500 truncate">{locationData.description}</p>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowLocationSelector(true)}
-                  className="px-3 py-1.5 text-xs font-medium glass-fracht-blue text-gray-700 rounded-lg hover:bg-fracht-blue-soft transition-colors fracht-label"
-                >
-                  Changer
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowLocationSelector(true)}
-                className="w-full px-3 py-2.5 bg-white/80 border border-fracht-blue/20 rounded-lg text-sm text-gray-600 fracht-title hover:border-fracht-blue/40 transition-colors flex items-center justify-center gap-2"
-              >
-                {/* @ts-ignore */}
-                <HiLocationMarker className="w-4 h-4" />
-                Sélectionner un emplacement
-              </button>
-            )}
-          </div>
-          )}
 
-          {/* Tags - Cliquables pour add/remove */}
-          {!isNewDesign && (
+          {/* Tags - Compact inline */}
           <div>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5 block fracht-label">
-              Tags
-            </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {item!.tags.map((tag) => (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {item.tags.map((tag) => (
                 <button
                   key={tag.id}
                   onClick={() => handleTagToggle(tag.id)}
-                  className="px-3 py-1 rounded-full text-[10px] font-medium backdrop-blur-sm border hover:opacity-70 transition-opacity"
+                  className="px-2 py-0.5 rounded-full text-[9px] font-medium backdrop-blur-sm border hover:opacity-70 transition-opacity"
                   style={{
                     backgroundColor: `${tag.color}15`,
                     color: tag.color,
@@ -545,57 +568,69 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                   {tag.label} ×
                 </button>
               ))}
+              {/* Créer tag rapide */}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newTagName.trim()) {
+                      handleCreateTag();
+                    }
+                  }}
+                  placeholder="+ tag"
+                  className="w-16 px-2 py-0.5 bg-white/80 border border-fracht-blue/20 rounded-lg text-[9px] focus:outline-none focus:ring-1 focus:ring-fracht-blue/30 fracht-title"
+                />
+              </div>
             </div>
-            {/* Tags disponibles */}
-            <div className="flex flex-wrap gap-1.5">
-              {availableTags
-                .filter((tag) => !item!.tags.some((t) => t.id === tag.id))
-                .slice(0, 5)
-                .map((tag) => (
-                  <button
-                    key={tag.id}
-                    onClick={() => handleTagToggle(tag.id)}
-                    className="px-2.5 py-1 rounded-full text-[10px] font-medium glass-fracht-blue text-gray-600 hover:bg-fracht-blue-soft transition-all"
-                  >
-                    {/* @ts-ignore */}
-                    <HiPlus className="w-3 h-3 inline mr-1" />
-                    {tag.name}
-                  </button>
-                ))}
-            </div>
+            {/* Tags disponibles - Compact */}
+            {availableTags.filter((tag) => !item.tags.some((t) => t.id === tag.id)).length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {availableTags
+                  .filter((tag) => !item.tags.some((t) => t.id === tag.id))
+                  .slice(0, 4)
+                  .map((tag) => (
+                    <button
+                      key={tag.id}
+                      onClick={() => handleTagToggle(tag.id)}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-medium glass-fracht-blue text-gray-600 hover:bg-fracht-blue-soft transition-all"
+                    >
+                      {/* @ts-ignore */}
+                      <HiPlus className="w-2.5 h-2.5 inline mr-0.5" />
+                      {tag.name}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
-          )}
 
-          {/* Divider */}
-          {!isNewDesign && <div className="h-px bg-gradient-to-r from-transparent via-fracht-blue/20 to-transparent"></div>}
-
-          {/* Commentaires - Simple */}
-          {!isNewDesign && (
+          {/* Commentaires - Compact */}
           <div>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5 block fracht-label">
-              Commentaires
-            </label>
-            <div className="space-y-3 mb-3">
-              {item!.feedback.map((comment) => (
-                <div key={comment.id} className="glass-fracht-blue rounded-lg p-3.5 border border-fracht-blue/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-gray-900 fracht-title">{comment.author}</span>
-                    <span className="text-[10px] text-gray-500 fracht-label">{comment.timestamp}</span>
+            {/* Commentaires existants - Compact */}
+            {item.feedback.length > 0 && (
+              <div className="space-y-2 mb-2 max-h-32 overflow-y-auto">
+                {item.feedback.slice(0, 3).map((comment) => (
+                  <div key={comment.id} className="glass-fracht-blue rounded-lg p-2 border border-fracht-blue/10">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-semibold text-gray-900 fracht-title">{comment.author}</span>
+                      <span className="text-[9px] text-gray-500 fracht-label">{comment.timestamp}</span>
+                    </div>
+                    {comment.text && (
+                      <p className="text-[10px] text-gray-700 leading-relaxed line-clamp-2">{comment.text}</p>
+                    )}
+                    {comment.audioUrl && (
+                      <audio controls className="w-full mt-1 h-6" src={comment.audioUrl}>
+                        Votre navigateur ne supporte pas l'élément audio.
+                      </audio>
+                    )}
                   </div>
-                  {comment.text && (
-                    <p className="text-xs text-gray-700 mb-2 leading-relaxed">{comment.text}</p>
-                  )}
-                  {comment.audioUrl && (
-                    <audio controls className="w-full mt-2 h-8" src={comment.audioUrl}>
-                      Votre navigateur ne supporte pas l'élément audio.
-                    </audio>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             
-            {/* Input commentaire simple */}
-            <div className="flex gap-2">
+            {/* Input commentaire - Compact inline */}
+            <div className="flex gap-1.5">
               <input
                 type="text"
                 value={commentText}
@@ -606,71 +641,57 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                     handleAddComment();
                   }
                 }}
-                placeholder="Ajouter un commentaire..."
-                className="flex-1 px-3 py-2 bg-white/80 border border-fracht-blue/20 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 fracht-title"
+                placeholder="Commentaire..."
+                className="flex-1 px-2.5 py-1.5 bg-white/80 border border-fracht-blue/20 rounded-lg text-[10px] focus:outline-none focus:ring-1 focus:ring-fracht-blue/30 fracht-title"
               />
               <button
                 onClick={isRecording ? stopRecording : startRecording}
-                className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                className={`px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
                   isRecording
                     ? 'bg-red-500 text-white hover:bg-red-600 shadow-premium-lg'
                     : 'glass-fracht-blue text-gray-700 hover:bg-fracht-blue-soft'
                 }`}
               >
                 {isRecording ? (
-                  <>
-                    <Waveform isActive={isRecording} />
-                    <span className="ml-1">{formatTime(recordingTime)}</span>
-                  </>
+                  <span className="text-[9px]">{formatTime(recordingTime)}</span>
                 ) : (
-                  // @ts-ignore
-                  <HiMicrophone className="w-4 h-4" />
+                  <>
+                    {/* @ts-ignore */}
+                    <HiMicrophone className="w-3 h-3" />
+                  </>
                 )}
               </button>
               {commentText && (
                 <button
                   onClick={handleAddComment}
-                  className="px-3 py-2 bg-fracht-blue text-white rounded-lg text-xs font-medium hover:bg-fracht-blue-dark transition-colors"
+                  className="px-2.5 py-1.5 bg-fracht-blue text-white rounded-lg text-[10px] font-medium hover:bg-fracht-blue-dark transition-colors"
                 >
-                  Envoyer
+                  ✓
                 </button>
               )}
             </div>
             {audioUrl && (
-              <div className="mt-2">
-                <audio controls className="w-full h-8" src={audioUrl} />
+              <div className="mt-1.5">
+                <audio controls className="w-full h-6" src={audioUrl} />
               </div>
             )}
           </div>
-          )}
 
-          {/* Versions - Discret */}
-          {!isNewDesign && item!.versionHistory.length > 0 && (
-            <>
-              <div className="h-px bg-gradient-to-r from-transparent via-fracht-blue/20 to-transparent"></div>
-              <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 block fracht-label">
-                  Versions ({item!.versionHistory.length})
-                </label>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {item!.versionHistory.map((version) => (
-                    <div key={version.id} className="flex items-center gap-2 text-xs text-gray-600">
-                      {/* @ts-ignore */}
-                      <HiClock className="w-3 h-3" />
-                      <span>v{version.version}</span>
-                      <span className="text-[10px] text-gray-400">• {version.timestamp}</span>
-                    </div>
-                  ))}
-                </div>
+          {/* Versions - Très discret */}
+          {item.versionHistory.length > 0 && (
+            <div className="pt-1 border-t border-fracht-blue/10">
+              <div className="flex items-center gap-1 text-[9px] text-gray-400">
+                {/* @ts-ignore */}
+                <HiClock className="w-2.5 h-2.5" />
+                <span>{item.versionHistory.length} version{item.versionHistory.length > 1 ? 's' : ''}</span>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Sticky Footer - Actions */}
-      {!isNewDesign && (
-      <div className="sticky bottom-0 glass-fracht border-t border-fracht-blue/10 px-5 py-4 flex gap-2.5 z-10">
+      {/* Sticky Footer - Actions compactes */}
+      <div className="sticky bottom-0 glass-fracht border-t border-fracht-blue/10 px-4 py-2.5 flex gap-2 z-10">
         <input
           ref={fileInputRef}
           type="file"
@@ -681,35 +702,18 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 glass-fracht-blue text-gray-700 rounded-lg text-sm font-semibold hover:bg-fracht-blue-soft transition-all fracht-label disabled:opacity-50"
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 glass-fracht-blue text-gray-700 rounded-lg text-xs font-semibold hover:bg-fracht-blue-soft transition-all fracht-label disabled:opacity-50"
         >
           {/* @ts-ignore */}
-          <FiUpload className="w-4 h-4" />
-          {isUploading ? 'Upload...' : 'Nouvelle version'}
-        </button>
-        <button
-          onClick={() => handleStatusChange('approved')}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg text-sm font-semibold hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-premium-lg fracht-label"
-        >
-          {/* @ts-ignore */}
-          <HiCheckCircle className="w-4 h-4" />
-          Approuver
-        </button>
-        <button
-          onClick={() => handleStatusChange('review')}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg text-sm font-semibold hover:from-amber-600 hover:to-amber-700 transition-all shadow-premium-lg fracht-label"
-        >
-          {/* @ts-ignore */}
-          <HiXCircle className="w-4 h-4" />
-          Modifier
+          <FiUpload className="w-3 h-3" />
+          {isUploading ? 'Upload...' : 'Version'}
         </button>
       </div>
-      )}
 
       {/* Location Selector Modal */}
-      {showLocationSelector && !isNewDesign && (
+      {showLocationSelector && (
         <LocationSelector
-          designId={item!.id}
+          designId={item.id}
           selectedLocationId={selectedLocationId}
           onSelect={handleLocationSelect}
           onClose={() => setShowLocationSelector(false)}

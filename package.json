@@ -10,9 +10,13 @@
     "send-email": "node send-email-resend.js",
     "analyze-images": "node scripts/analyze-images.js",
     "generate-designs": "node scripts/generate-designs.js",
-    "init-console": "node scripts/init-fracht-console.js"
+    "init-console": "node scripts/init-fracht-console.js",
+    "clean-names": "node scripts/clean-design-names.js"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.89.0",
     "dotenv": "^17.2.3",

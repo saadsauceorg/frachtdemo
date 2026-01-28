@@ -1,26 +1,21 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast, Toaster } from 'sonner';
 import { DesignItem, FilterState } from '../types/fracht';
 import { MasonryGrid } from './MasonryGrid';
-import { HorizontalScrollGallery } from './HorizontalScrollGallery';
 import { DetailPanel } from './DetailPanel';
-import { Header, ViewMode } from './Header';
+import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { FilterBar } from './FilterBar';
-import { getDesigns } from '../services/designs';
+import { getDesigns, getDesignById } from '../services/designs';
 import '../styles/fracht.css';
 
 export const FrachtConsole: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<DesignItem | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [isNewDesignMode, setIsNewDesignMode] = useState(false);
   const [designs, setDesigns] = useState<DesignItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem('fracht_view_mode');
-    return (saved === 'horizontal' || saved === 'grid') ? saved : 'grid';
-  });
+  const [isDragging, setIsDragging] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     search: '',
     selectedTags: [],
@@ -31,10 +26,6 @@ export const FrachtConsole: React.FC = () => {
     showPinnedOnly: false,
     groupBy: null,
     dateRange: { start: null, end: null },
-  });
-  const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
-    const saved = localStorage.getItem('fracht_sidebar_visible');
-    return saved === 'true';
   });
 
   // Charger les designs depuis Supabase
@@ -113,74 +104,108 @@ export const FrachtConsole: React.FC = () => {
 
   const handleClosePanel = useCallback(() => {
     setIsPanelOpen(false);
-    setIsNewDesignMode(false);
     setTimeout(() => setSelectedItem(null), 300);
-  }, []);
-
-  const handleAddDesign = useCallback(() => {
-    setSelectedItem(null);
-    setIsNewDesignMode(true);
-    setIsPanelOpen(true);
-  }, []);
-
-  // ✅ Callback pour ajout optimiste - Ajoute immédiatement sans recharger
-  const handleDesignCreated = useCallback((newDesign: DesignItem) => {
-    // Ajouter le nouveau design au début de la liste avec animation
-    setDesigns((prev) => [newDesign, ...prev]);
-    setIsPanelOpen(false);
-    setIsNewDesignMode(false);
-    setSelectedItem(null);
-    toast.success('Design ajouté avec succès');
   }, []);
 
   const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
   }, []);
 
-  const handleUpdate = useCallback(() => {
-    loadDesigns();
-    // Mettre à jour l'item sélectionné si nécessaire
-    if (selectedItem) {
-      getDesigns().then((data) => {
-        const updated = data.find((d) => d.id === selectedItem.id);
-        if (updated) setSelectedItem(updated);
-      });
+  // Mettre à jour un design spécifique dans l'état local
+  const updateDesignInState = useCallback((updatedDesign: DesignItem) => {
+    setDesigns((prev) => 
+      prev.map((d) => (d.id === updatedDesign.id ? updatedDesign : d))
+    );
+    // Mettre à jour l'item sélectionné si c'est celui qui a été modifié
+    if (selectedItem && selectedItem.id === updatedDesign.id) {
+      setSelectedItem(updatedDesign);
     }
   }, [selectedItem]);
 
-  // ✅ Callback optimiste pour le reorder - Met à jour localement sans recharger
-  const handleReorder = useCallback((reorderedItems: DesignItem[]) => {
-    // Créer un map des nouveaux order_index depuis les items réordonnés
-    // Utiliser la position dans reorderedItems comme nouvel order_index
-    const newOrderMap = new Map<string, number>();
-    reorderedItems.forEach((item, index) => {
-      newOrderMap.set(item.id, index);
-    });
-    
-    // Mettre à jour designs en préservant l'ordre des items réordonnés
-    // et en gardant les autres items à leur place
-    setDesigns((prevDesigns) => {
-      // Créer un nouveau tableau avec les order_index mis à jour
-      const updated = prevDesigns.map((design) => {
-        const newIndex = newOrderMap.get(design.id);
-        if (newIndex !== undefined) {
-          // Item présent dans le reorder - utiliser le nouvel order_index
-          return { ...design, order_index: newIndex };
-        }
-        // Item non présent dans le reorder - garder son order_index actuel
-        return design;
-      });
-      
-      // Trier par order_index pour maintenir l'ordre visuel
-      return updated.sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
-    });
-    
-    // Mettre à jour l'item sélectionné si nécessaire
-    if (selectedItem) {
-      const updated = reorderedItems.find((d) => d.id === selectedItem.id);
-      if (updated) setSelectedItem(updated);
+  // Fonction pour recharger un design depuis Supabase si nécessaire
+  const refreshDesign = useCallback(async (designId: string) => {
+    const updated = await getDesignById(designId);
+    if (updated) {
+      updateDesignInState(updated);
     }
-  }, [selectedItem]);
+  }, [updateDesignInState]);
+
+  // handleUpdate accepte maintenant un designId optionnel pour recharger seulement ce design
+  const handleUpdate = useCallback((designId?: string) => {
+    if (designId) {
+      // Recharger seulement ce design
+      refreshDesign(designId);
+    } else {
+      // Recharger tout (seulement si vraiment nécessaire)
+      loadDesigns();
+    }
+  }, [refreshDesign]);
+
+  // Supprimer un design de l'état local (la suppression de la base de données est gérée par MasonryGrid)
+  const handleDelete = useCallback((designId: string) => {
+    setDesigns((prev) => prev.filter((d) => d.id !== designId));
+    // Fermer le panel si l'item supprimé était sélectionné
+    if (selectedItem && selectedItem.id === designId) {
+      handleClosePanel();
+    }
+  }, [selectedItem, handleClosePanel]);
+
+  // Ajouter une nouvelle image
+  const handleAddImage = useCallback(async (file: File) => {
+    try {
+      const { uploadImageAndGetDimensions, createDesign } = await import('../services/designs');
+      const { url, aspectRatio, width, height } = await uploadImageAndGetDimensions(file);
+      const newDesign = await createDesign(url, aspectRatio, width, height);
+      toast.success('Image ajoutée avec succès');
+      // Ajouter le nouveau design à l'état local
+      setDesigns((prev) => [...prev, newDesign]);
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Erreur inconnue lors de l\'ajout de l\'image';
+      console.error('Erreur lors de l\'ajout de l\'image:', error);
+      toast.error(errorMessage, {
+        duration: 5000,
+        description: errorMessage.includes('Bucket') 
+          ? 'Vérifiez que le bucket "files" existe et est public dans Supabase Storage'
+          : undefined
+      });
+    }
+  }, []);
+
+  // Gérer le drag & drop sur la grille
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Ne pas désactiver si on entre dans un enfant
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      handleAddImage(file);
+    } else {
+      toast.error('Veuillez déposer une image');
+    }
+  }, [handleAddImage]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
 
   // Close panel on Escape key
   useEffect(() => {
@@ -206,85 +231,74 @@ export const FrachtConsole: React.FC = () => {
 
   return (
     <div className="fracht-console min-h-screen bg-white grid-bg">
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          duration: 3000,
-          style: {
-            background: '#fff',
-            color: '#111827',
-            border: '1px solid rgba(11, 60, 93, 0.1)',
-            borderRadius: '12px',
-            boxShadow: '0 4px 12px rgba(11, 60, 93, 0.15)',
-          },
-          success: {
-            iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
-            },
-          },
-        }}
-      />
-      <Header 
-        onAddDesign={handleAddDesign} 
-        viewMode={viewMode}
-        onViewModeChange={(mode) => {
-          setViewMode(mode);
-          localStorage.setItem('fracht_view_mode', mode);
-        }}
-        sidebarVisible={sidebarVisible}
-        onToggleSidebar={() => {
-          const newVisibility = !sidebarVisible;
-          setSidebarVisible(newVisibility);
-          localStorage.setItem('fracht_sidebar_visible', String(newVisibility));
-        }}
-      />
+      <Toaster position="top-right" />
+      <Header />
       <div className="flex">
-        <Sidebar isVisible={sidebarVisible} />
-        <main className={`flex-1 pt-16 bg-fracht-cream/50 transition-all duration-300 ${sidebarVisible ? 'lg:ml-56' : ''} ${viewMode === 'horizontal' ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+        <main className="flex-1 pt-16 bg-fracht-cream/50">
           <FilterBar filters={filters} onFilterChange={handleFilterChange} items={designs} />
-          <div className="px-4 md:px-6 py-6 md:py-8">
-            {viewMode === 'grid' ? (
-              <MasonryGrid 
-                items={filteredItems} 
-                onItemClick={handleItemClick} 
-                onUpdate={handleUpdate}
-                onReorder={handleReorder}
-              />
-            ) : (
-              <HorizontalScrollGallery 
-                items={filteredItems} 
-                onItemClick={handleItemClick} 
-                onUpdate={handleUpdate}
-              />
+          <div 
+            className={`px-4 md:px-6 py-6 md:py-8 relative transition-all duration-300 ${
+              isDragging ? 'bg-fracht-blue/5' : ''
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+          >
+            {isDragging && (
+              <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                <div className="glass-fracht-blue border-2 border-dashed border-fracht-blue rounded-2xl p-12 backdrop-blur-md">
+                  <div className="text-center">
+                    <div className="text-4xl mb-4">📷</div>
+                    <p className="text-lg font-semibold text-fracht-blue fracht-heading">
+                      Déposez votre image ici
+                    </p>
+                    <p className="text-sm text-gray-600 mt-2 fracht-label">
+                      Les images seront ajoutées automatiquement
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
+            <MasonryGrid 
+              items={filteredItems} 
+              onItemClick={handleItemClick} 
+              onUpdate={(designId) => handleUpdate(designId)}
+              onDelete={handleDelete}
+              onReorder={(reorderedItems) => {
+                // Mettre à jour l'ordre dans l'état local
+                const reorderedIds = reorderedItems.map(item => item.id);
+                setDesigns((prev) => {
+                  const sorted = [...prev].sort((a, b) => {
+                    const indexA = reorderedIds.indexOf(a.id);
+                    const indexB = reorderedIds.indexOf(b.id);
+                    return indexA === -1 ? 1 : indexB === -1 ? -1 : indexA - indexB;
+                  });
+                  return sorted;
+                });
+              }}
+            />
           </div>
         </main>
       </div>
 
       <AnimatePresence>
-        {(isPanelOpen && (selectedItem || isNewDesignMode)) && (
+        {isPanelOpen && selectedItem && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-              className="fixed inset-0 bg-fracht-blue-overlay backdrop-blur-md z-40"
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
               onClick={handleClosePanel}
             />
             <DetailPanel
               item={selectedItem}
               isOpen={isPanelOpen}
               onClose={handleClosePanel}
-              onUpdate={handleUpdate}
-              onDesignCreated={handleDesignCreated}
+              onUpdate={(designId) => handleUpdate(designId)}
+              onDesignUpdate={updateDesignInState}
             />
           </>
         )}

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FilterState, DesignItem, ProjectStatus } from '../types/fracht';
+import { FilterState, DesignItem } from '../types/fracht';
 import { HiX, HiSearch, HiStar } from 'react-icons/hi';
 
 interface FilterBarProps {
@@ -21,24 +21,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFilterChange, i
     return Array.from(tagMap.values());
   }, [items]);
 
-  const statusOptions: { value: ProjectStatus; label: string }[] = [
-    { value: 'draft', label: 'Brouillon' },
-    { value: 'review', label: 'Révision' },
-    { value: 'approved', label: 'Approuvé' },
-  ];
-
   const toggleTag = (tagId: string) => {
     const newTags = filters.selectedTags.includes(tagId)
       ? filters.selectedTags.filter((id) => id !== tagId)
       : [...filters.selectedTags, tagId];
     onFilterChange({ selectedTags: newTags });
-  };
-
-  const toggleStatus = (status: ProjectStatus) => {
-    const newStatuses = filters.selectedStatus.includes(status)
-      ? filters.selectedStatus.filter((s) => s !== status)
-      : [...filters.selectedStatus, status];
-    onFilterChange({ selectedStatus: newStatuses });
   };
 
   const togglePinned = () => {
@@ -49,7 +36,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFilterChange, i
     onFilterChange({
       search: '',
       selectedTags: [],
-      selectedStatus: [],
       selectedProjects: [],
       selectedClients: [],
       selectedLocations: [],
@@ -60,7 +46,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFilterChange, i
   const hasActiveFilters =
     filters.search ||
     filters.selectedTags.length > 0 ||
-    filters.selectedStatus.length > 0 ||
     filters.selectedProjects.length > 0 ||
     filters.selectedClients.length > 0 ||
     filters.selectedLocations.length > 0 ||
@@ -96,28 +81,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFilterChange, i
           <HiStar className={`w-3.5 h-3.5 ${filters.showPinnedOnly ? 'fill-current' : ''}`} />
           Épinglés
         </button>
-
-        {/* Status Filters */}
-        {statusOptions.map((status) => {
-          const isActive = filters.selectedStatus.includes(status.value);
-          return (
-            <button
-              key={status.value}
-              onClick={() => toggleStatus(status.value)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all backdrop-blur-sm border fracht-label ${
-                isActive
-                  ? status.value === 'draft'
-                    ? 'bg-gray-500/95 text-white border-gray-400/30 shadow-premium'
-                    : status.value === 'review'
-                    ? 'bg-amber-500/95 text-white border-amber-400/30 shadow-premium'
-                    : 'bg-emerald-500/95 text-white border-emerald-400/30 shadow-premium'
-                  : 'glass-fracht-blue text-gray-700 border-fracht-blue/20 hover:bg-fracht-blue-soft'
-              }`}
-            >
-              {status.label}
-            </button>
-          );
-        })}
 
         {/* Tag Filters */}
         {allTags.slice(0, 6).map((tag) => {

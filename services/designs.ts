@@ -159,6 +159,98 @@ export async function getDesigns(): Promise<DesignItem[]> {
   return fullDesigns;
 }
 
+// Récupérer un seul design complet par ID
+export async function getDesignById(designId: string): Promise<DesignItem | null> {
+  const { data: design, error } = await supabase
+    .from('designs')
+    .select('*')
+    .eq('id', designId)
+    .single();
+
+  if (error || !design) return null;
+
+  // Récupérer les tags
+  const { data: designTags } = await supabase
+    .from('design_tags')
+    .select('tag_id')
+    .eq('design_id', design.id);
+
+  const tagIds = designTags?.map((dt) => dt.tag_id) || [];
+  let tags: Array<{ id: string; label: string; color: string }> = [];
+  
+  if (tagIds.length > 0) {
+    const { data: tagsData } = await supabase
+      .from('tags')
+      .select('*')
+      .in('id', tagIds);
+
+    tags = (tagsData || []).map((tag) => ({
+      id: tag.id,
+      label: tag.name,
+      color: tag.color || '#0B3C5D',
+    }));
+  }
+
+  // Récupérer commentaires, versions et location
+  const [commentsRes, versionsRes, locationRes] = await Promise.all([
+    supabase
+      .from('comments')
+      .select('*')
+      .eq('design_id', design.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('versions')
+      .select('*')
+      .eq('design_id', design.id)
+      .order('version_number', { ascending: false }),
+    design.location_id
+      ? supabase.from('locations').select('*').eq('id', design.location_id).single()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const locationData = locationRes.data
+    ? {
+        id: locationRes.data.id,
+        name: locationRes.data.name,
+        imageUrl: locationRes.data.image_url,
+        description: locationRes.data.description,
+      }
+    : undefined;
+
+  return {
+    id: design.id,
+    title: design.title,
+    imageUrl: design.image_url,
+    aspectRatio: Number(design.aspect_ratio),
+    project: design.project || 'Projet Fracht',
+    location: design.location || 'France',
+    client: design.client || 'Fracht Group',
+    status: design.status,
+    tags,
+    locationId: design.location_id || null,
+    locationData,
+    isPinned: design.is_pinned || false,
+    orderIndex: design.order_index || 0,
+    rating: design.rating || null,
+    versionHistory: (versionsRes.data || []).map((v) => ({
+      id: v.id,
+      version: v.version_number.toString(),
+      timestamp: new Date(v.created_at).toISOString().split('T')[0],
+      author: v.author,
+      changes: v.changes || 'Nouvelle version',
+    })),
+    feedback: (commentsRes.data || []).map((c) => ({
+      id: c.id,
+      author: c.author,
+      timestamp: new Date(c.created_at).toISOString().split('T')[0],
+      text: c.text || undefined,
+      audioUrl: c.audio_url || undefined,
+    })),
+    createdAt: design.created_at,
+    updatedAt: design.updated_at,
+  } as DesignItem;
+}
+
 // ✅ Upload image avec détection automatique des dimensions
 export async function uploadImageAndGetDimensions(file: File): Promise<{
   url: string;
@@ -178,21 +270,45 @@ export async function uploadImageAndGetDimensions(file: File): Promise<{
 
       try {
         // Upload vers Supabase Storage
-        const fileExt = file.name.split('.').pop() || 'jpg';
+        const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         
+        // Utiliser le bucket "files" qui existe réellement dans Supabase
+        const BUCKET_NAME = 'files';
+        
+        // Convertir le File en ArrayBuffer pour éviter les problèmes de type
+        const arrayBuffer = await file.arrayBuffer();
+        
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('designs')
-          .upload(fileName, file, {
-            contentType: file.type,
+          .from(BUCKET_NAME)
+          .upload(fileName, arrayBuffer, {
+            contentType: file.type || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
             upsert: false,
+            cacheControl: '3600',
           });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error('Erreur upload:', uploadError);
+          // Message d'erreur plus détaillé
+          if (uploadError.message?.includes('Bucket not found')) {
+            throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas. Veuillez vérifier votre configuration Supabase Storage.`);
+          } else if (uploadError.message?.includes('new row violates row-level security')) {
+            throw new Error(`Permissions insuffisantes. Vérifiez les politiques RLS du bucket "${BUCKET_NAME}" dans Supabase.`);
+          }
+          throw new Error(`Erreur lors de l'upload: ${uploadError.message}`);
+        }
+
+        if (!uploadData?.path) {
+          throw new Error('Erreur: aucun chemin retourné après l\'upload');
+        }
 
         const { data: { publicUrl } } = supabase.storage
-          .from('designs')
-          .getPublicUrl(fileName);
+          .from(BUCKET_NAME)
+          .getPublicUrl(uploadData.path);
+
+        if (!publicUrl) {
+          throw new Error('Impossible d\'obtenir l\'URL publique du fichier');
+        }
 
         URL.revokeObjectURL(objectUrl);
         
@@ -218,13 +334,10 @@ export async function uploadImageAndGetDimensions(file: File): Promise<{
 }
 
 export async function createDesign(
-  title: string,
   imageUrl: string,
   aspectRatio: number,
   width?: number,
-  height?: number,
-  project?: string,
-  location?: string
+  height?: number
 ): Promise<DesignItem> {
   // Récupérer le dernier order_index pour placer le nouveau design à la fin
   const { data: lastDesign } = await supabase
@@ -234,19 +347,23 @@ export async function createDesign(
     .limit(1)
     .single();
 
-  const nextOrderIndex = lastDesign?.order_index ? lastDesign.order_index + 1 : 0;
+  const nextOrderIndex = lastDesign?.order_index !== null && lastDesign?.order_index !== undefined 
+    ? lastDesign.order_index + 1 
+    : 0;
 
+  // Générer un titre automatique basé sur le numéro
+  const title = `Design #${nextOrderIndex + 1}`;
+
+  // Insérer seulement les colonnes qui existent dans la table (pas width ni height)
   const { data, error } = await supabase
     .from('designs')
     .insert({
       title,
       image_url: imageUrl,
       aspect_ratio: aspectRatio,
-      width: width || null,
-      height: height || null,
       status: 'draft',
-      project: project || 'Projet Fracht',
-      location: location || 'France',
+      project: 'Projet Fracht',
+      location: 'France',
       client: 'Fracht Group',
       order_index: nextOrderIndex,
     })
@@ -255,24 +372,29 @@ export async function createDesign(
 
   if (error) throw error;
 
-  return {
-    id: data.id,
-    title: data.title,
-    imageUrl: data.image_url,
-    aspectRatio: Number(data.aspect_ratio),
-    width: data.width || undefined,
-    height: data.height || undefined,
-    project: data.project || 'Projet Fracht',
-    location: data.location || 'France',
-    client: data.client || 'Fracht Group',
-    status: data.status,
-    tags: [],
-    versionHistory: [],
-    feedback: [],
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-    orderIndex: data.order_index,
-  };
+  // Récupérer le design complet avec toutes les relations
+  const fullDesign = await getDesignById(data.id);
+  if (!fullDesign) throw new Error('Erreur lors de la création du design');
+
+  return fullDesign;
+}
+
+// Supprimer un design
+export async function deleteDesign(designId: string): Promise<void> {
+  // Supprimer les relations d'abord
+  await Promise.all([
+    supabase.from('design_tags').delete().eq('design_id', designId),
+    supabase.from('comments').delete().eq('design_id', designId),
+    supabase.from('versions').delete().eq('design_id', designId),
+  ]);
+
+  // Supprimer le design
+  const { error } = await supabase
+    .from('designs')
+    .delete()
+    .eq('id', designId);
+
+  if (error) throw error;
 }
 
 export async function updateDesignTitle(id: string, title: string): Promise<void> {
@@ -374,6 +496,61 @@ export async function updateDesignLocation(designId: string, locationId: string 
   if (error) throw error;
 }
 
+// Créer un nouvel emplacement avec une image
+export async function createLocation(name: string, imageFile: File): Promise<LocationDB> {
+  // Upload de l'image vers Supabase Storage
+  const fileExt = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const fileName = `locations/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  
+  // Utiliser le bucket "files" qui existe réellement dans Supabase
+  const BUCKET_NAME = 'files';
+  
+  // Convertir le File en ArrayBuffer pour éviter les problèmes de type
+  const arrayBuffer = await imageFile.arrayBuffer();
+  
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(fileName, arrayBuffer, {
+      contentType: imageFile.type || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+      upsert: false,
+      cacheControl: '3600',
+    });
+
+  if (uploadError) {
+    if (uploadError.message?.includes('Bucket not found')) {
+      throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas. Veuillez vérifier votre configuration Supabase Storage.`);
+    } else if (uploadError.message?.includes('new row violates row-level security')) {
+      throw new Error(`Permissions insuffisantes. Vérifiez les politiques RLS du bucket "${BUCKET_NAME}" dans Supabase.`);
+    }
+    throw uploadError;
+  }
+
+  if (!uploadData?.path) {
+    throw new Error('Erreur: aucun chemin retourné après l\'upload');
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(uploadData.path);
+
+  if (!publicUrl) {
+    throw new Error('Impossible d\'obtenir l\'URL publique du fichier');
+  }
+
+  // Créer l'emplacement dans la base de données
+  const { data, error } = await supabase
+    .from('locations')
+    .insert({
+      name,
+      image_url: publicUrl,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 // Pin
 export async function togglePin(designId: string, isPinned: boolean): Promise<void> {
   const { error } = await supabase
@@ -384,24 +561,6 @@ export async function togglePin(designId: string, isPinned: boolean): Promise<vo
   if (error) throw error;
 }
 
-// Reorder
-export async function reorderDesigns(updates: Array<{ id: string; order_index: number }>): Promise<void> {
-  // Utiliser une transaction via Promise.all pour mettre à jour tous les designs
-  const promises = updates.map(({ id, order_index }) =>
-    supabase
-      .from('designs')
-      .update({ order_index })
-      .eq('id', id)
-  );
-
-  const results = await Promise.all(promises);
-  const errors = results.filter((r) => r.error);
-  
-  if (errors.length > 0) {
-    throw new Error(`Erreur lors du réordonnancement: ${errors[0].error?.message}`);
-  }
-}
-
 // Rating
 export async function updateRating(designId: string, rating: number | null): Promise<void> {
   const { error } = await supabase
@@ -410,6 +569,25 @@ export async function updateRating(designId: string, rating: number | null): Pro
     .eq('id', designId);
 
   if (error) throw error;
+}
+
+// Mettre à jour l'ordre des designs (batch simple)
+export async function updateDesignsOrder(updates: Array<{ id: string; order_index: number }>): Promise<void> {
+  // Utiliser Promise.all pour faire toutes les mises à jour en parallèle
+  const promises = updates.map(({ id, order_index }) =>
+    supabase
+      .from('designs')
+      .update({ order_index })
+      .eq('id', id)
+  );
+
+  const results = await Promise.all(promises);
+  
+  // Vérifier s'il y a des erreurs
+  const errors = results.filter(r => r.error);
+  if (errors.length > 0) {
+    throw new Error(`Erreur lors de la mise à jour de l'ordre: ${errors[0].error?.message}`);
+  }
 }
 
 // Versions
