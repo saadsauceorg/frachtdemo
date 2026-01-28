@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "send-email": "node send-email-resend.js",
+    "send-email-access-salma": "node send-email-access-salma.js",
     "analyze-images": "node scripts/analyze-images.js",
     "generate-designs": "node scripts/generate-designs.js",
     "init-console": "node scripts/init-fracht-console.js",
