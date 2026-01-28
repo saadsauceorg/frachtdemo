@@ -13,7 +13,9 @@ import { Waveform } from './Waveform';
 import { LocationSelector } from './LocationSelector';
 import { 
   updateDesignTitle, 
-  addComment, 
+  addComment,
+  updateComment,
+  deleteComment,
   getTags, 
   createTag,
   addTagToDesign, 
@@ -48,12 +50,17 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
   const [selectedLocationId, setSelectedLocationId] = useState<string | null | undefined>(item.locationId);
   const [locationData, setLocationData] = useState(item.locationData);
   const [rating, setRating] = useState<number | null>(item.rating || null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionText, setTranscriptionText] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     setTitle(item.title);
@@ -141,12 +148,44 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
     }
   };
 
-
   const handleAddComment = async () => {
     if (!commentText.trim() && !audioUrl) return;
 
     try {
-      const comment = await addComment(item.id, commentText || undefined, audioUrl || undefined);
+      let finalText = commentText.trim() || transcriptionText.trim();
+      let finalAudioUrl = audioUrl;
+
+      // Upload l'audio vers Supabase Storage si présent
+      if (audioUrl && audioUrl.startsWith('blob:')) {
+        try {
+          setIsTranscribing(true);
+          const response = await fetch(audioUrl);
+          const audioBlob = await response.blob();
+          const fileExt = 'webm';
+          const fileName = `${item.id}/comments/${Date.now()}.${fileExt}`;
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('files')
+            .upload(fileName, audioBlob, {
+              contentType: 'audio/webm',
+            });
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('files')
+            .getPublicUrl(fileName);
+          
+          finalAudioUrl = publicUrl;
+        } catch (error) {
+          console.error('Erreur upload audio:', error);
+          toast.error('Erreur lors de l\'upload de l\'audio');
+        } finally {
+          setIsTranscribing(false);
+        }
+      }
+
+      const comment = await addComment(item.id, finalText || undefined, finalAudioUrl || undefined);
       toast.success('Commentaire ajouté');
       
       // Mettre à jour l'état avec le nouveau commentaire
@@ -165,9 +204,59 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       
       setCommentText('');
       setAudioUrl(null);
+      setTranscriptionText('');
       onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de l\'ajout du commentaire');
+      console.error(error);
+    }
+  };
+
+  const handleEditComment = (commentId: string, currentText: string) => {
+    setEditingCommentId(commentId);
+    setEditingCommentText(currentText || '');
+  };
+
+  const handleSaveComment = async (commentId: string) => {
+    try {
+      await updateComment(commentId, editingCommentText || undefined);
+      toast.success('Commentaire modifié');
+      
+      const updated = {
+        ...item,
+        feedback: item.feedback.map((f) =>
+          f.id === commentId
+            ? { ...f, text: editingCommentText || undefined }
+            : f
+        ),
+      };
+      onDesignUpdate?.(updated);
+      
+      setEditingCommentId(null);
+      setEditingCommentText('');
+      onUpdate?.(item.id);
+    } catch (error) {
+      toast.error('Erreur lors de la modification');
+      console.error(error);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm('Supprimer ce commentaire ?')) return;
+
+    try {
+      await deleteComment(commentId);
+      toast.success('Commentaire supprimé');
+      
+      const updated = {
+        ...item,
+        feedback: item.feedback.filter((f) => f.id !== commentId),
+      };
+      onDesignUpdate?.(updated);
+      
+      onUpdate?.(item.id);
+    } catch (error) {
+      toast.error('Erreur lors de la suppression');
       console.error(error);
     }
   };
@@ -257,6 +346,46 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       setRecordingTime(0);
+      setTranscriptionText('');
+
+      // Démarrer la transcription avec Web Speech API
+      const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'fr-FR';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognitionRef.current = recognition;
+
+        recognition.onresult = (event: any) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (finalTranscript) {
+            setTranscriptionText((prev) => (prev + finalTranscript).trim());
+            setCommentText((prev) => (prev + finalTranscript).trim());
+          } else if (interimTranscript) {
+            // Afficher la transcription intermédiaire dans le champ de commentaire
+            const currentText = commentText || '';
+            setCommentText(currentText + interimTranscript);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error('Erreur de transcription:', event.error);
+        };
+
+        recognition.start();
+      }
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -271,6 +400,11 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
         stream.getTracks().forEach((track) => track.stop());
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
+        }
+        // Arrêter la reconnaissance vocale
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
         }
       };
 
@@ -290,6 +424,11 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      // Arrêter la reconnaissance vocale
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
     }
   };
 
@@ -584,12 +723,11 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                 />
               </div>
             </div>
-            {/* Tags disponibles - Compact */}
+            {/* Tags disponibles - Afficher tous les tags */}
             {availableTags.filter((tag) => !item.tags.some((t) => t.id === tag.id)).length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {availableTags
                   .filter((tag) => !item.tags.some((t) => t.id === tag.id))
-                  .slice(0, 4)
                   .map((tag) => (
                     <button
                       key={tag.id}
@@ -611,18 +749,75 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
             {item.feedback.length > 0 && (
               <div className="space-y-2 mb-2 max-h-32 overflow-y-auto">
                 {item.feedback.slice(0, 3).map((comment) => (
-                  <div key={comment.id} className="glass-fracht-blue rounded-lg p-2 border border-fracht-blue/10">
+                  <div key={comment.id} className="glass-fracht-blue rounded-lg p-2 border border-fracht-blue/10 group">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] font-semibold text-gray-900 fracht-title">{comment.author}</span>
-                      <span className="text-[9px] text-gray-500 fracht-label">{comment.timestamp}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-gray-500 fracht-label">{comment.timestamp}</span>
+                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleEditComment(comment.id, comment.text || '')}
+                            className="p-0.5 hover:bg-fracht-blue/20 rounded text-[8px] text-gray-600 hover:text-fracht-blue"
+                            title="Modifier"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            className="p-0.5 hover:bg-red-100 rounded text-[8px] text-gray-600 hover:text-red-600"
+                            title="Supprimer"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    {comment.text && (
-                      <p className="text-[10px] text-gray-700 leading-relaxed line-clamp-2">{comment.text}</p>
-                    )}
-                    {comment.audioUrl && (
-                      <audio controls className="w-full mt-1 h-6" src={comment.audioUrl}>
-                        Votre navigateur ne supporte pas l'élément audio.
-                      </audio>
+                    {editingCommentId === comment.id ? (
+                      <div className="flex gap-1 mt-1">
+                        <input
+                          type="text"
+                          value={editingCommentText}
+                          onChange={(e) => setEditingCommentText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSaveComment(comment.id);
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingCommentId(null);
+                              setEditingCommentText('');
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 bg-white/90 border border-fracht-blue/30 rounded text-[10px] focus:outline-none focus:ring-1 focus:ring-fracht-blue/30"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveComment(comment.id)}
+                          className="px-2 py-1 bg-fracht-blue text-white rounded text-[9px] hover:bg-fracht-blue-dark"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingCommentId(null);
+                            setEditingCommentText('');
+                          }}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-[9px] hover:bg-gray-300"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {comment.text && (
+                          <p className="text-[10px] text-gray-700 leading-relaxed line-clamp-2">{comment.text}</p>
+                        )}
+                        {comment.audioUrl && (
+                          <audio controls className="w-full mt-1 h-6" src={comment.audioUrl}>
+                            Votre navigateur ne supporte pas l'élément audio.
+                          </audio>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}
@@ -646,13 +841,18 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
               />
               <button
                 onClick={isRecording ? stopRecording : startRecording}
+                disabled={isTranscribing}
                 className={`px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
                   isRecording
                     ? 'bg-red-500 text-white hover:bg-red-600 shadow-premium-lg'
+                    : isTranscribing
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
                     : 'glass-fracht-blue text-gray-700 hover:bg-fracht-blue-soft'
                 }`}
               >
-                {isRecording ? (
+                {isTranscribing ? (
+                  <span className="text-[9px]">⏳</span>
+                ) : isRecording ? (
                   <span className="text-[9px]">{formatTime(recordingTime)}</span>
                 ) : (
                   <>

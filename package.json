@@ -11,7 +11,9 @@
     "analyze-images": "node scripts/analyze-images.js",
     "generate-designs": "node scripts/generate-designs.js",
     "init-console": "node scripts/init-fracht-console.js",
-    "clean-names": "node scripts/clean-design-names.js"
+    "clean-names": "node scripts/clean-design-names.js",
+    "backfill-thumbnails": "node scripts/backfill-thumbnails.js",
+    "check-db": "node scripts/check-db.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

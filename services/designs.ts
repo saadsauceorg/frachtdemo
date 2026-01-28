@@ -1,5 +1,65 @@
 import { supabase } from './supabase';
 import { DesignItem } from '../types/fracht';
+import { logActivity } from './activityLog';
+
+// Singleton Worker pour éviter de le recréer à chaque upload
+let thumbnailWorker: Worker | null = null;
+const pendingRequests = new Map<string, {
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+  timeoutId: number;
+}>();
+
+function getThumbnailWorker(): Worker {
+  if (!thumbnailWorker) {
+    thumbnailWorker = new Worker(
+      new URL('../workers/image-thumbnail.worker.ts', import.meta.url),
+      { type: 'module' }
+    );
+
+    // Gérer les messages du worker avec système d'ID
+    thumbnailWorker.addEventListener('message', (e: MessageEvent) => {
+      const { requestId, error, ...data } = e.data;
+      const request = pendingRequests.get(requestId);
+      
+      if (request) {
+        clearTimeout(request.timeoutId);
+        pendingRequests.delete(requestId);
+        
+        if (error) {
+          request.reject(new Error(error));
+        } else {
+          request.resolve(data);
+        }
+      }
+    });
+
+    thumbnailWorker.addEventListener('error', (error: ErrorEvent) => {
+      // En cas d'erreur globale, rejeter toutes les requêtes en cours
+      for (const [requestId, request] of pendingRequests.entries()) {
+        clearTimeout(request.timeoutId);
+        request.reject(error.error || new Error('Erreur dans le worker'));
+      }
+      pendingRequests.clear();
+      resetThumbnailWorker();
+    });
+  }
+  return thumbnailWorker;
+}
+
+function resetThumbnailWorker(): void {
+  if (thumbnailWorker) {
+    // Nettoyer toutes les requêtes en cours
+    for (const [requestId, request] of pendingRequests.entries()) {
+      clearTimeout(request.timeoutId);
+      request.reject(new Error('Worker réinitialisé'));
+    }
+    pendingRequests.clear();
+    
+    thumbnailWorker.terminate();
+    thumbnailWorker = null;
+  }
+}
 
 export interface DesignDB {
   id: string;
@@ -266,7 +326,7 @@ export async function getDesignById(designId: string): Promise<DesignItem | null
   } as DesignItem;
 }
 
-// ✅ Upload image avec génération de thumbnail + original
+// ✅ Upload image avec génération de thumbnail + original (optimisé)
 export async function uploadImageAndGetDimensions(file: File): Promise<{
   originalUrl: string;
   thumbUrl: string;
@@ -274,108 +334,116 @@ export async function uploadImageAndGetDimensions(file: File): Promise<{
   height: number;
   aspectRatio: number;
 }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
+  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const BUCKET_NAME = 'files';
+  const THUMB_MAX_WIDTH = 800;
+  const ORIGINAL_MAX_SIZE = 8 * 1024 * 1024; // 8MB
+  const WORKER_TIMEOUT = 10000; // 10 secondes
 
-    img.onload = async () => {
-      const width = img.naturalWidth;
-      const height = img.naturalHeight;
-      const aspectRatio = width / height;
+  const contentType = file.type || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`;
+  const shouldCompress = file.size > ORIGINAL_MAX_SIZE;
 
-      try {
-        const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-        const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-        const BUCKET_NAME = 'files';
-        
-        // Générer thumbnail (max 800px de largeur, qualité 80%)
-        const thumbCanvas = document.createElement('canvas');
-        const thumbMaxWidth = 800;
-        const thumbScale = Math.min(thumbMaxWidth / width, 1);
-        thumbCanvas.width = width * thumbScale;
-        thumbCanvas.height = height * thumbScale;
-        const thumbCtx = thumbCanvas.getContext('2d');
-        if (!thumbCtx) throw new Error('Impossible de créer le contexte canvas');
-        thumbCtx.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
-        
-        // Convertir thumbnail en blob
-        const thumbBlob = await new Promise<Blob>((resolve, reject) => {
-          thumbCanvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Erreur génération thumbnail'));
-          }, `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`, 0.8);
-        });
-        
-        // Upload original
-        const originalArrayBuffer = await file.arrayBuffer();
-        const originalFileName = `${baseFileName}.${fileExt}`;
-        const { data: originalUpload, error: originalError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .upload(originalFileName, originalArrayBuffer, {
-            contentType: file.type || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-            upsert: false,
-            cacheControl: '31536000', // 1 an cache pour originaux
-          });
+  // Utiliser le singleton Worker
+  const thumbnailWorker = getThumbnailWorker();
 
-        if (originalError) {
-          if (originalError.message?.includes('Bucket not found')) {
-            throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas.`);
-          }
-          throw new Error(`Erreur upload original: ${originalError.message}`);
-        }
+  // Lire le fichier en ArrayBuffer pour le transfert (transferable objects)
+  const fileData = await file.arrayBuffer();
 
-        // Upload thumbnail
-        const thumbArrayBuffer = await thumbBlob.arrayBuffer();
-        const thumbFileName = `${baseFileName}_thumb.${fileExt}`;
-        const { data: thumbUpload, error: thumbError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .upload(thumbFileName, thumbArrayBuffer, {
-            contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-            upsert: false,
-            cacheControl: '31536000', // 1 an cache pour thumbnails
-          });
+  // Générer un ID unique pour cette requête
+  const requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        if (thumbError) {
-          throw new Error(`Erreur upload thumbnail: ${thumbError.message}`);
-        }
+  // Générer le thumbnail dans le Worker avec timeout de sécurité
+  const { blob: thumbBlob, originalBlob, width, height, aspectRatio } = await new Promise<{
+    blob: Blob;
+    originalBlob: Blob;
+    width: number;
+    height: number;
+    aspectRatio: number;
+  }>((resolve, reject) => {
+    // Créer le timeout
+    const timeoutId = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      resetThumbnailWorker();
+      reject(new Error('Timeout: le worker a pris plus de 10 secondes'));
+    }, WORKER_TIMEOUT);
 
-        if (!originalUpload?.path || !thumbUpload?.path) {
-          throw new Error('Erreur: chemins manquants après upload');
-        }
+    // Stocker la requête
+    pendingRequests.set(requestId, { resolve, reject, timeoutId: timeoutId as unknown as number });
 
-        const { data: { publicUrl: originalUrl } } = supabase.storage
-          .from(BUCKET_NAME)
-          .getPublicUrl(originalUpload.path);
-        const { data: { publicUrl: thumbUrl } } = supabase.storage
-          .from(BUCKET_NAME)
-          .getPublicUrl(thumbUpload.path);
-
-        if (!originalUrl || !thumbUrl) {
-          throw new Error('Impossible d\'obtenir les URLs publiques');
-        }
-
-        URL.revokeObjectURL(objectUrl);
-        
-        resolve({
-          originalUrl,
-          thumbUrl,
-          width,
-          height,
-          aspectRatio,
-        });
-      } catch (error) {
-        URL.revokeObjectURL(objectUrl);
-        reject(error);
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Erreur lors du chargement de l\'image'));
-    };
-
-    img.src = objectUrl;
+    // Passer l'ArrayBuffer avec transferable objects (évite copie mémoire)
+    thumbnailWorker.postMessage(
+      {
+        requestId,
+        fileData,
+        fileName: file.name,
+        mimeType: contentType,
+        maxWidth: THUMB_MAX_WIDTH,
+        compressOriginal: shouldCompress,
+        originalMaxSize: ORIGINAL_MAX_SIZE,
+      },
+      [fileData] // Transferable: ArrayBuffer transféré (pas copié)
+    );
   });
+
+  // Préparer les noms de fichiers
+  const originalFileName = `${baseFileName}.${shouldCompress ? 'jpg' : fileExt}`;
+  const thumbFileName = `${baseFileName}_thumb.${fileExt}`;
+  const finalContentType = shouldCompress ? 'image/jpeg' : contentType;
+
+  // Upload parallèle : original + thumbnail en même temps
+  const [originalUpload, thumbUpload] = await Promise.all([
+    supabase.storage
+      .from(BUCKET_NAME)
+      .upload(originalFileName, originalBlob, {
+        contentType: finalContentType,
+        upsert: false,
+        cacheControl: '3600',
+      }),
+    supabase.storage
+      .from(BUCKET_NAME)
+      .upload(thumbFileName, thumbBlob, {
+        contentType,
+        upsert: false,
+        cacheControl: '3600',
+      }),
+  ]);
+
+  // Vérifier les erreurs
+  if (originalUpload.error) {
+    if (originalUpload.error.message?.includes('Bucket not found')) {
+      throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas.`);
+    }
+    throw new Error(`Erreur upload original: ${originalUpload.error.message}`);
+  }
+
+  if (thumbUpload.error) {
+    throw new Error(`Erreur upload thumbnail: ${thumbUpload.error.message}`);
+  }
+
+  if (!originalUpload.data?.path || !thumbUpload.data?.path) {
+    throw new Error('Erreur: chemins manquants après upload');
+  }
+
+  // Obtenir les URLs publiques
+  const { data: { publicUrl: originalUrl } } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(originalUpload.data.path);
+  const { data: { publicUrl: thumbUrl } } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(thumbUpload.data.path);
+
+  if (!originalUrl || !thumbUrl) {
+    throw new Error('Impossible d\'obtenir les URLs publiques');
+  }
+
+  return {
+    originalUrl,
+    thumbUrl,
+    width,
+    height,
+    aspectRatio,
+  };
 }
 
 export async function createDesign(
@@ -385,15 +453,16 @@ export async function createDesign(
   width?: number,
   height?: number
 ): Promise<DesignItem> {
-  // Récupérer le dernier order_index (gérer le cas où la table est vide)
-  const { data: designs, error: orderError } = await supabase
+  // Récupérer le dernier order_index (requête optimisée)
+  const { data: lastDesign } = await supabase
     .from('designs')
     .select('order_index')
     .order('order_index', { ascending: false })
-    .limit(1);
+    .limit(1)
+    .single();
 
-  const nextOrderIndex = designs && designs.length > 0 && designs[0]?.order_index !== null && designs[0]?.order_index !== undefined
-    ? designs[0].order_index + 1 
+  const nextOrderIndex = lastDesign?.order_index != null
+    ? lastDesign.order_index + 1
     : 0;
 
   const title = `Design #${nextOrderIndex + 1}`;
@@ -420,6 +489,15 @@ export async function createDesign(
   const fullDesign = await getDesignById(data.id);
   if (!fullDesign) throw new Error('Erreur lors de la création du design');
 
+  // Logger l'activité
+  await logActivity(
+    data.id,
+    'image_added',
+    `Image ajoutée: ${title}`,
+    { design_title: title },
+    'Système'
+  );
+
   return fullDesign;
 }
 
@@ -432,6 +510,13 @@ export async function deleteDesign(designId: string): Promise<void> {
     supabase.from('versions').delete().eq('design_id', designId),
   ]);
 
+  // Récupérer le titre avant suppression pour le log
+  const { data: design } = await supabase
+    .from('designs')
+    .select('title')
+    .eq('id', designId)
+    .single();
+
   // Supprimer le design
   const { error } = await supabase
     .from('designs')
@@ -439,27 +524,79 @@ export async function deleteDesign(designId: string): Promise<void> {
     .eq('id', designId);
 
   if (error) throw error;
+
+  // Logger l'activité
+  if (design) {
+    await logActivity(
+      designId,
+      'image_deleted',
+      `Image supprimée: ${design.title}`,
+      { design_title: design.title },
+      'Utilisateur'
+    );
+  }
 }
 
 export async function updateDesignTitle(id: string, title: string): Promise<void> {
+  // Récupérer l'ancien titre pour le log
+  const { data: oldDesign } = await supabase
+    .from('designs')
+    .select('title')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase
     .from('designs')
     .update({ title })
     .eq('id', id);
 
   if (error) throw error;
+
+  // Logger l'activité
+  if (oldDesign) {
+    await logActivity(
+      id,
+      'title_updated',
+      `Titre modifié: "${oldDesign.title}" → "${title}"`,
+      { old_value: oldDesign.title, new_value: title, design_title: title },
+      'Utilisateur'
+    );
+  }
 }
 
 export async function updateDesignStatus(
   id: string,
   status: 'draft' | 'review' | 'approved'
 ): Promise<void> {
+  // Récupérer l'ancien statut et le titre pour le log
+  const { data: oldDesign } = await supabase
+    .from('designs')
+    .select('status, title')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase
     .from('designs')
     .update({ status })
     .eq('id', id);
 
   if (error) throw error;
+
+  // Logger l'activité
+  if (oldDesign && oldDesign.status !== status) {
+    const statusLabels: Record<string, string> = {
+      draft: 'Brouillon',
+      review: 'En révision',
+      approved: 'Approuvé'
+    };
+    await logActivity(
+      id,
+      'status_updated',
+      `Statut modifié: ${statusLabels[oldDesign.status] || oldDesign.status} → ${statusLabels[status] || status}`,
+      { old_value: oldDesign.status, new_value: status, design_title: oldDesign.title },
+      'Utilisateur'
+    );
+  }
 }
 
 // Tags
@@ -486,9 +623,31 @@ export async function addTagToDesign(designId: string, tagId: string): Promise<v
     .insert({ design_id: designId, tag_id: tagId });
 
   if (error) throw error;
+
+  // Récupérer les infos du tag et du design pour le log
+  const [tagRes, designRes] = await Promise.all([
+    supabase.from('tags').select('name, color').eq('id', tagId).single(),
+    supabase.from('designs').select('title').eq('id', designId).single(),
+  ]);
+
+  if (tagRes.data && designRes.data) {
+    await logActivity(
+      designId,
+      'tag_added',
+      `Tag ajouté: ${tagRes.data.name}`,
+      { tag_name: tagRes.data.name, tag_color: tagRes.data.color, design_title: designRes.data.title },
+      'Utilisateur'
+    );
+  }
 }
 
 export async function removeTagFromDesign(designId: string, tagId: string): Promise<void> {
+  // Récupérer les infos avant suppression pour le log
+  const [tagRes, designRes] = await Promise.all([
+    supabase.from('tags').select('name, color').eq('id', tagId).single(),
+    supabase.from('designs').select('title').eq('id', designId).single(),
+  ]);
+
   const { error } = await supabase
     .from('design_tags')
     .delete()
@@ -496,6 +655,17 @@ export async function removeTagFromDesign(designId: string, tagId: string): Prom
     .eq('tag_id', tagId);
 
   if (error) throw error;
+
+  // Logger l'activité
+  if (tagRes.data && designRes.data) {
+    await logActivity(
+      designId,
+      'tag_removed',
+      `Tag retiré: ${tagRes.data.name}`,
+      { tag_name: tagRes.data.name, tag_color: tagRes.data.color, design_title: designRes.data.title },
+      'Utilisateur'
+    );
+  }
 }
 
 // Comments
@@ -517,7 +687,101 @@ export async function addComment(
     .single();
 
   if (error) throw error;
+
+  // Récupérer le titre du design pour le log
+  const { data: design } = await supabase
+    .from('designs')
+    .select('title')
+    .eq('id', designId)
+    .single();
+
+  // Logger l'activité
+  await logActivity(
+    designId,
+    'comment_added',
+    text ? `Commentaire ajouté: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"` : 'Commentaire audio ajouté',
+    { comment_text: text || undefined, design_title: design?.title },
+    author
+  );
+
   return data;
+}
+
+export async function updateComment(
+  commentId: string,
+  text?: string,
+  audioUrl?: string
+): Promise<CommentDB> {
+  // Récupérer l'ancien commentaire pour le log
+  const { data: oldComment } = await supabase
+    .from('comments')
+    .select('design_id, text')
+    .eq('id', commentId)
+    .single();
+
+  const { data, error } = await supabase
+    .from('comments')
+    .update({
+      text,
+      audio_url: audioUrl,
+    })
+    .eq('id', commentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Logger l'activité
+  if (oldComment) {
+    const { data: design } = await supabase
+      .from('designs')
+      .select('title')
+      .eq('id', oldComment.design_id)
+      .single();
+
+    await logActivity(
+      oldComment.design_id,
+      'comment_edited',
+      text ? `Commentaire modifié: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"` : 'Commentaire audio modifié',
+      { comment_text: text || undefined, design_title: design?.title },
+      'Utilisateur'
+    );
+  }
+
+  return data;
+}
+
+export async function deleteComment(commentId: string): Promise<void> {
+  // Récupérer le commentaire avant suppression pour le log
+  const { data: comment } = await supabase
+    .from('comments')
+    .select('design_id, text')
+    .eq('id', commentId)
+    .single();
+
+  const { error } = await supabase
+    .from('comments')
+    .delete()
+    .eq('id', commentId);
+
+  if (error) throw error;
+
+  // Logger l'activité
+  if (comment) {
+    const { data: design } = await supabase
+      .from('designs')
+      .select('title')
+      .eq('id', comment.design_id)
+      .single();
+
+    await logActivity(
+      comment.design_id,
+      'comment_deleted',
+      `Commentaire supprimé`,
+      { comment_text: comment.text || undefined, design_title: design?.title },
+      'Utilisateur'
+    );
+  }
 }
 
 // Locations
@@ -532,12 +796,51 @@ export async function getLocations(): Promise<LocationDB[]> {
 }
 
 export async function updateDesignLocation(designId: string, locationId: string | null): Promise<void> {
+  // Récupérer l'ancienne location et le titre pour le log
+  const { data: oldDesign } = await supabase
+    .from('designs')
+    .select('location_id, title')
+    .eq('id', designId)
+    .single();
+
   const { error } = await supabase
     .from('designs')
     .update({ location_id: locationId })
     .eq('id', designId);
 
   if (error) throw error;
+
+  // Logger l'activité si la location a changé
+  if (oldDesign && oldDesign.location_id !== locationId) {
+    let oldLocationName = 'Aucune';
+    let newLocationName = 'Aucune';
+
+    if (oldDesign.location_id) {
+      const { data: oldLoc } = await supabase
+        .from('locations')
+        .select('name')
+        .eq('id', oldDesign.location_id)
+        .single();
+      if (oldLoc) oldLocationName = oldLoc.name;
+    }
+
+    if (locationId) {
+      const { data: newLoc } = await supabase
+        .from('locations')
+        .select('name')
+        .eq('id', locationId)
+        .single();
+      if (newLoc) newLocationName = newLoc.name;
+    }
+
+    await logActivity(
+      designId,
+      'location_updated',
+      `Emplacement modifié: ${oldLocationName} → ${newLocationName}`,
+      { old_value: oldLocationName, new_value: newLocationName, design_title: oldDesign.title },
+      'Utilisateur'
+    );
+  }
 }
 
 // Créer un nouvel emplacement avec une image
@@ -607,12 +910,30 @@ export async function togglePin(designId: string, isPinned: boolean): Promise<vo
 
 // Rating
 export async function updateRating(designId: string, rating: number | null): Promise<void> {
+  // Récupérer l'ancien rating et le titre pour le log
+  const { data: oldDesign } = await supabase
+    .from('designs')
+    .select('rating, title')
+    .eq('id', designId)
+    .single();
+
   const { error } = await supabase
     .from('designs')
     .update({ rating })
     .eq('id', designId);
 
   if (error) throw error;
+
+  // Logger l'activité si le rating a changé
+  if (oldDesign && oldDesign.rating !== rating) {
+    await logActivity(
+      designId,
+      'rating_updated',
+      `Note modifiée: ${oldDesign.rating ?? 'Aucune'} → ${rating ?? 'Aucune'}`,
+      { old_value: oldDesign.rating?.toString() || 'Aucune', new_value: rating?.toString() || 'Aucune', design_title: oldDesign.title },
+      'Utilisateur'
+    );
+  }
 }
 
 // Mettre à jour l'ordre des designs (batch simple)
@@ -665,5 +986,22 @@ export async function addVersion(
     .single();
 
   if (error) throw error;
+
+  // Récupérer le titre du design pour le log
+  const { data: design } = await supabase
+    .from('designs')
+    .select('title')
+    .eq('id', designId)
+    .single();
+
+  // Logger l'activité
+  await logActivity(
+    designId,
+    'version_added',
+    `Nouvelle version ${versionNumber} ajoutée${changes ? `: ${changes}` : ''}`,
+    { version_number: versionNumber, design_title: design?.title },
+    author
+  );
+
   return data;
 }

@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { DesignItem } from '../types/fracht';
 import { HiStar, HiTrash, HiPencil, HiTag, HiArrowsExpand, HiLocationMarker } from 'react-icons/hi';
-import { togglePin, deleteDesign, updateDesignsOrder } from '../services/designs';
+import { togglePin, deleteDesign, updateDesignsOrder, updateRating } from '../services/designs';
 import { toast } from 'sonner';
 import { ConfirmationModal } from './ConfirmationModal';
 import { LocationSelector } from './LocationSelector';
@@ -45,7 +45,10 @@ interface SortableItemProps {
   onTagClick: (e: React.MouseEvent, item: DesignItem) => void;
   onLocationClick: (e: React.MouseEvent, item: DesignItem) => void;
   onFullscreenClick: (e: React.MouseEvent, item: DesignItem) => void;
+  onRatingClick: (e: React.MouseEvent, item: DesignItem, rating: number) => void;
   onLocationUpdate?: (designId: string) => void;
+  onMenuToggle?: (itemId: string) => void;
+  isMenuOpen?: boolean;
 }
 
 const SortableItem: React.FC<SortableItemProps> = ({
@@ -60,7 +63,10 @@ const SortableItem: React.FC<SortableItemProps> = ({
   onTagClick,
   onLocationClick,
   onFullscreenClick,
+  onRatingClick,
   onLocationUpdate,
+  onMenuToggle,
+  isMenuOpen = false,
 }) => {
   const {
     attributes,
@@ -155,15 +161,31 @@ const SortableItem: React.FC<SortableItemProps> = ({
             </div>
           </div>
 
-          {/* Rating Badge - Bottom Left */}
-          {item.rating && (
-            <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <div className="bg-black/70 backdrop-blur-sm rounded px-1.5 py-0.5 flex items-center gap-0.5">
-                <span className="text-yellow-400 text-[10px]">⭐</span>
-                <span className="text-white text-[10px] font-semibold">{item.rating}</span>
-              </div>
-            </div>
-          )}
+          {/* Rating Stars - Bottom Left - Toujours visible et éditable */}
+          <div 
+            className="absolute bottom-2 left-2 flex items-center gap-0.5 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRatingClick(e, item, star);
+                }}
+                className="p-0.5 hover:scale-110 transition-transform cursor-pointer"
+                aria-label={`Noter ${star} sur 5`}
+              >
+                <HiStar
+                  className={`w-3 h-3 transition-all ${
+                    item.rating && star <= item.rating
+                      ? 'text-yellow-400 fill-yellow-400'
+                      : 'text-white/30 fill-transparent stroke-white/50 stroke-[1.5]'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
 
           {/* Location Badge - Bottom Right - Toujours visible si emplacement choisi */}
           {item.locationData && (
@@ -178,13 +200,21 @@ const SortableItem: React.FC<SortableItemProps> = ({
 
         {/* Card Footer - Avec boutons en bas à droite */}
         <div className="p-2 bg-white relative">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[10px] font-semibold text-gray-900 fracht-title">#{item.orderIndex + 1}</h3>
-            <div className="flex gap-0.5 items-center">
-              {item.tags.slice(0, 2).map((tag) => (
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[10px] font-semibold text-gray-900 fracht-title truncate flex-shrink-0">
+              #{item.orderIndex + 1}
+              {(() => {
+                // Détecter si le titre est modifié (différent du format standard "Design #X")
+                const standardTitlePattern = /^Design\s*#?\d+$/i;
+                const isModified = item.title && !standardTitlePattern.test(item.title.trim());
+                return isModified ? ` ${item.title}` : '';
+              })()}
+            </h3>
+            <div className="flex gap-0.5 items-center flex-wrap justify-end flex-shrink">
+              {item.tags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="px-1.5 py-0.5 rounded text-[9px] font-medium backdrop-blur-sm border border-current/20"
+                  className="px-1.5 py-0.5 rounded text-[9px] font-medium backdrop-blur-sm border border-current/20 whitespace-nowrap"
                   style={{
                     backgroundColor: `${tag.color}12`,
                     color: tag.color,
@@ -195,44 +225,106 @@ const SortableItem: React.FC<SortableItemProps> = ({
               ))}
             </div>
           </div>
-          {/* Boutons d'action en bas à droite */}
-          <div className="flex items-center justify-end gap-1 mt-1.5">
+          {/* Menu bouton "..." - Toujours visible */}
+          <div className="flex items-center justify-end mt-1.5 relative">
             <button
-              onClick={(e) => onLocationClick(e, item)}
-              className={`p-1 rounded transition-all opacity-0 group-hover:opacity-100 ${
-                item.locationData 
-                  ? 'text-fracht-blue hover:bg-fracht-blue-soft' 
-                  : 'text-gray-500 hover:bg-fracht-blue-soft hover:text-fracht-blue'
+              onClick={(e) => {
+                e.stopPropagation();
+                onMenuToggle?.(item.id);
+              }}
+              className={`p-1.5 rounded-lg transition-all ${
+                isMenuOpen
+                  ? 'bg-fracht-blue text-white'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
               }`}
-              aria-label={item.locationData ? "Changer l'emplacement" : "Choisir un emplacement"}
-              title={item.locationData ? `Emplacement: ${item.locationData.name}` : "Choisir un emplacement"}
+              aria-label="Menu d'actions"
+              title="Menu d'actions"
             >
-              <HiLocationMarker className="w-3 h-3" />
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
             </button>
-            <button
-              onClick={(e) => onTagClick(e, item)}
-              className="p-1 rounded text-gray-500 hover:bg-fracht-blue-soft hover:text-fracht-blue transition-all opacity-0 group-hover:opacity-100"
-              aria-label="Ajouter tag"
-              title="Ajouter tag"
-            >
-              <HiTag className="w-3 h-3" />
-            </button>
-            <button
-              onClick={(e) => onEditClick(e, item)}
-              className="p-1 rounded text-gray-500 hover:bg-fracht-blue-soft hover:text-fracht-blue transition-all opacity-0 group-hover:opacity-100"
-              aria-label="Modifier"
-              title="Modifier"
-            >
-              <HiPencil className="w-3 h-3" />
-            </button>
-            <button
-              onClick={(e) => onDeleteClick(e, item)}
-              className="p-1 rounded text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-              aria-label="Supprimer"
-              title="Supprimer"
-            >
-              <HiTrash className="w-3 h-3" />
-            </button>
+
+            {/* Menu Overlay */}
+            {isMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMenuToggle?.(item.id);
+                  }}
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  className="absolute bottom-full right-0 mb-2 bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 z-50 min-w-[180px] md:min-w-[200px]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onLocationClick(e, item);
+                      onMenuToggle?.(item.id);
+                    }}
+                    className={`w-full px-4 py-3 text-left text-sm font-semibold transition-colors flex items-center gap-3 ${
+                      item.locationData
+                        ? 'text-fracht-blue hover:bg-fracht-blue-soft'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <HiLocationMarker className="w-4.5 h-4.5 flex-shrink-0" />
+                    <span className="flex-1">{item.locationData ? "Changer l'emplacement" : "Choisir un emplacement"}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTagClick(e, item);
+                      onMenuToggle?.(item.id);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-3"
+                  >
+                    <HiTag className="w-4.5 h-4.5 flex-shrink-0" />
+                    <span className="flex-1">Gérer les tags</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFullscreenClick(e, item);
+                      onMenuToggle?.(item.id);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-3"
+                  >
+                    <HiArrowsExpand className="w-4.5 h-4.5 flex-shrink-0" />
+                    <span className="flex-1">Plein écran</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditClick(e, item);
+                      onMenuToggle?.(item.id);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-3"
+                  >
+                    <HiPencil className="w-4.5 h-4.5 flex-shrink-0" />
+                    <span className="flex-1">Modifier</span>
+                  </button>
+                  <div className="border-t border-gray-200 my-1" />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteClick(e, item);
+                      onMenuToggle?.(item.id);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
+                  >
+                    <HiTrash className="w-4.5 h-4.5 flex-shrink-0" />
+                    <span className="flex-1">Supprimer</span>
+                  </button>
+                </motion.div>
+              </>
+            )}
           </div>
         </div>
       </motion.div>
@@ -263,6 +355,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     isOpen: false,
     item: null,
   });
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
     setItemsState(items);
@@ -330,6 +423,19 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   const handleFullscreenClick = (e: React.MouseEvent, item: DesignItem) => {
     e.stopPropagation();
     setFullscreenImage({ isOpen: true, item });
+  };
+
+  const handleRatingClick = async (e: React.MouseEvent, item: DesignItem, rating: number) => {
+    e.stopPropagation();
+    try {
+      // Si on clique sur la même note, on la retire (rating = null)
+      const newRating = item.rating === rating ? null : rating;
+      await updateRating(item.id, newRating);
+      onUpdate?.(item.id);
+    } catch (error) {
+      toast.error('Erreur lors de la mise à jour de la note');
+      console.error(error);
+    }
   };
 
   const handleLocationSelect = async (locationId: string | null) => {
@@ -465,6 +571,11 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
                 onTagClick={handleTagClick}
                 onLocationClick={handleLocationClick}
                 onFullscreenClick={handleFullscreenClick}
+                onRatingClick={handleRatingClick}
+                onMenuToggle={(itemId) => {
+                  setOpenMenuId(openMenuId === itemId ? null : itemId);
+                }}
+                isMenuOpen={openMenuId === item.id}
                 onLocationUpdate={onUpdate}
               />
             ))}

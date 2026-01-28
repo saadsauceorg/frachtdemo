@@ -84,7 +84,7 @@ async function uploadThumbnail(thumbBuffer, originalUrl) {
       .upload(thumbFileName, thumbBuffer, {
         contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
         upsert: true, // Remplacer si existe déjà
-        cacheControl: '31536000', // 1 an cache
+        cacheControl: '86400', // 24h cache
       });
     
     if (uploadError) {

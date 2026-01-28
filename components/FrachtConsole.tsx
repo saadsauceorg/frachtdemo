@@ -24,8 +24,10 @@ export const FrachtConsole: React.FC = () => {
     selectedClients: [],
     selectedLocations: [],
     showPinnedOnly: false,
+    locationFilter: 'all',
     groupBy: null,
     dateRange: { start: null, end: null },
+    sortBy: 'default',
   });
 
   // Charger les designs depuis Supabase
@@ -92,6 +94,28 @@ export const FrachtConsole: React.FC = () => {
     // Pinned filter
     if (filters.showPinnedOnly) {
       items = items.filter((item) => item.isPinned === true);
+    }
+
+    // Location filter (Affectés / Non affectés)
+    if (filters.locationFilter === 'assigned') {
+      items = items.filter((item) => item.locationId !== null && item.locationId !== undefined);
+    } else if (filters.locationFilter === 'unassigned') {
+      items = items.filter((item) => !item.locationId);
+    }
+
+    // Sort by rating
+    if (filters.sortBy === 'rating_desc') {
+      items = items.sort((a, b) => {
+        const ratingA = a.rating ?? 0;
+        const ratingB = b.rating ?? 0;
+        return ratingB - ratingA;
+      });
+    } else if (filters.sortBy === 'rating_asc') {
+      items = items.sort((a, b) => {
+        const ratingA = a.rating ?? 0;
+        const ratingB = b.rating ?? 0;
+        return ratingA - ratingB;
+      });
     }
 
     return items;
@@ -199,14 +223,43 @@ export const FrachtConsole: React.FC = () => {
       return;
     }
     
-    // Traiter toutes les images en parallèle
-    toast.info(`Ajout de ${files.length} image(s)...`);
-    const promises = files.map(file => handleAddImage(file, false));
+    // Créer un toast persistant avec progression
+    const toastId = toast.loading(`Upload en cours: 0/${files.length} images`, {
+      duration: Infinity, // Reste affiché jusqu'à ce qu'on le ferme manuellement
+    });
+    
+    let processedCount = 0;
+    const totalFiles = files.length;
+    
+    // Fonction pour mettre à jour le toast
+    const updateProgress = () => {
+      processedCount++;
+      const percentage = Math.round((processedCount / totalFiles) * 100);
+      toast.loading(
+        `Upload en cours: ${processedCount}/${totalFiles} images (${percentage}%)`,
+        { id: toastId, duration: Infinity }
+      );
+    };
+    
+    // Traiter toutes les images en parallèle avec suivi de progression
+    const promises = files.map(async (file) => {
+      try {
+        await handleAddImage(file, false);
+        updateProgress();
+        return { status: 'fulfilled' as const };
+      } catch (error) {
+        updateProgress();
+        return { status: 'rejected' as const, error };
+      }
+    });
     
     try {
-      const results = await Promise.allSettled(promises);
+      const results = await Promise.all(promises);
       const successCount = results.filter(r => r.status === 'fulfilled').length;
       const errorCount = results.filter(r => r.status === 'rejected').length;
+      
+      // Fermer le toast de progression
+      toast.dismiss(toastId);
       
       if (successCount > 0) {
         toast.success(`${successCount} image(s) ajoutée(s) avec succès`);
@@ -216,6 +269,7 @@ export const FrachtConsole: React.FC = () => {
       }
     } catch (error) {
       console.error('Erreur lors de l\'ajout des images:', error);
+      toast.dismiss(toastId);
       toast.error('Erreur lors de l\'ajout des images');
     }
   }, [handleAddImage]);
@@ -261,7 +315,12 @@ export const FrachtConsole: React.FC = () => {
   return (
     <div className="fracht-console min-h-screen bg-white grid-bg">
       <Toaster position="top-right" />
-      <Header />
+      <Header onDesignClick={(designId) => {
+        const design = designs.find(d => d.id === designId);
+        if (design) {
+          handleItemClick(design);
+        }
+      }} />
       <div className="flex">
         <main className="flex-1 pt-16 bg-fracht-cream/50">
           <FilterBar filters={filters} onFilterChange={handleFilterChange} items={designs} />

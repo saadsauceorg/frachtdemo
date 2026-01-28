@@ -55,6 +55,10 @@ export interface DesignItem {
   rating?: number | null;
 }
 
+export type SortOption = 'default' | 'rating_desc' | 'rating_asc';
+
+export type LocationFilter = 'all' | 'assigned' | 'unassigned';
+
 export interface FilterState {
   search: string;
   selectedTags: string[];
@@ -63,9 +67,11 @@ export interface FilterState {
   selectedClients: string[];
   selectedLocations: string[];
   showPinnedOnly?: boolean;
+  locationFilter?: LocationFilter;
   groupBy: GroupByOption | null;
   dateRange: {
     start: string | null;
     end: string | null;
   };
+  sortBy?: SortOption;
 }
