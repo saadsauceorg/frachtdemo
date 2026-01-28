@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   DndContext,
@@ -18,7 +18,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { DesignItem } from '../types/fracht';
-import { HiStar, HiTrash, HiPencil, HiTag, HiLocationMarker, HiArrowsExpand } from 'react-icons/hi';
+import { HiStar, HiTrash, HiPencil, HiTag, HiArrowsExpand, HiLocationMarker } from 'react-icons/hi';
 import { togglePin, deleteDesign, updateDesignsOrder } from '../services/designs';
 import { toast } from 'sonner';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -100,9 +100,10 @@ const SortableItem: React.FC<SortableItemProps> = ({
             <div className="absolute inset-0 skeleton" />
           )}
           <img
-            src={item.imageUrl}
+            src={item.thumbnailUrl || item.imageUrl}
             alt={item.title}
             loading="lazy"
+            decoding="async"
             className={`w-full h-auto transition-transform duration-700 ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             } group-hover:scale-[1.02]`}
@@ -111,9 +112,6 @@ const SortableItem: React.FC<SortableItemProps> = ({
               maxWidth: '100%',
             }}
             onLoad={() => onImageLoad(item.id)}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x600?text=Image+non+disponible';
-            }}
           />
           
           {/* Overlay Gradient */}
@@ -255,7 +253,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     isOpen: false,
     item: null,
   });
-  const [localItems, setLocalItems] = useState<DesignItem[]>(items);
+  const [itemsState, setItemsState] = useState<DesignItem[]>(items);
   const [isReordering, setIsReordering] = useState(false);
   const [locationSelector, setLocationSelector] = useState<{ isOpen: boolean; item: DesignItem | null }>({
     isOpen: false,
@@ -267,7 +265,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   });
 
   useEffect(() => {
-    setLocalItems(items);
+    setItemsState(items);
   }, [items]);
 
   useEffect(() => {
@@ -337,18 +335,18 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   const handleLocationSelect = async (locationId: string | null) => {
     if (!locationSelector.item) return;
     
-    // Mettre à jour l'état local immédiatement
-    const updatedItems = localItems.map((item) => {
+    // Mettre à jour l'état immédiatement
+    const updatedItems = itemsState.map((item) => {
       if (item.id === locationSelector.item!.id) {
         return {
           ...item,
           locationId: locationId,
-          locationData: locationId ? item.locationData : undefined, // Sera mis à jour par onUpdate
+          locationData: locationId ? item.locationData : undefined,
         };
       }
       return item;
     });
-    setLocalItems(updatedItems);
+    setItemsState(updatedItems);
     
     // Notifier le parent pour mettre à jour Supabase
     onUpdate?.(locationSelector.item.id);
@@ -373,14 +371,14 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
 
     if (!over || active.id === over.id) return;
 
-    const oldIndex = localItems.findIndex((item) => item.id === active.id);
-    const newIndex = localItems.findIndex((item) => item.id === over.id);
+    const oldIndex = itemsState.findIndex((item) => item.id === active.id);
+    const newIndex = itemsState.findIndex((item) => item.id === over.id);
 
     if (oldIndex === -1 || newIndex === -1) return;
 
     // Mise à jour optimiste de l'UI
-    const newItems = arrayMove(localItems, oldIndex, newIndex) as DesignItem[];
-    setLocalItems(newItems);
+    const newItems = arrayMove(itemsState, oldIndex, newIndex) as DesignItem[];
+    setItemsState(newItems);
     setIsReordering(true);
 
     // Mettre à jour les order_index dans Supabase
@@ -395,7 +393,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
       toast.success('Ordre mis à jour');
     } catch (error) {
       // En cas d'erreur, restaurer l'ordre précédent
-      setLocalItems(items);
+      setItemsState(items);
       toast.error('Erreur lors de la mise à jour de l\'ordre');
       console.error(error);
     } finally {
@@ -443,7 +441,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={localItems.map(item => item.id)}
+          items={itemsState.map(item => item.id)}
           strategy={verticalListSortingStrategy}
         >
           <div
@@ -453,7 +451,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
               columnGap: '12px',
             }}
           >
-            {localItems.map((item, index) => (
+            {itemsState.map((item, index) => (
               <SortableItem
                 key={item.id}
                 item={item}

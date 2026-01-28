@@ -79,9 +79,6 @@ export const ImageFullscreenModal: React.FC<ImageFullscreenModalProps> = ({
                   style={{
                     display: 'block',
                   }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x600?text=Image+non+disponible';
-                  }}
                 />
                 
                 {/* Title overlay (optionnel) */}

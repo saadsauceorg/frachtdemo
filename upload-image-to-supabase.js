@@ -17,9 +17,9 @@ const FILE_NAME = 'email-cover-urai.png';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function readLocalImage(filepath) {
+function readImage(filepath) {
   try {
-    console.log('📥 Lecture de l\'image locale:', filepath);
+    console.log('📥 Lecture de l\'image:', filepath);
     if (!fs.existsSync(filepath)) {
       throw new Error(`Le fichier n'existe pas: ${filepath}`);
     }
@@ -79,8 +79,8 @@ async function main() {
       process.exit(1);
     }
     
-    // Lire l'image locale
-    const imageBuffer = readLocalImage(imagePath);
+    // Lire l'image
+    const imageBuffer = readImage(imagePath);
     
     // Uploader dans Supabase
     const publicUrl = await uploadToSupabase(imageBuffer);

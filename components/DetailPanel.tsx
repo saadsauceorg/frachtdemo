@@ -108,7 +108,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
           await updateDesignTitle(item.id, title.trim());
           setIsEditingTitle(false);
           toast.success('Titre mis à jour');
-          // Mettre à jour l'état local directement
+          // Mettre à jour l'état directement
           const updated = { ...item, title: title.trim() };
           onDesignUpdate?.(updated);
           onUpdate?.(item.id);
@@ -149,7 +149,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       const comment = await addComment(item.id, commentText || undefined, audioUrl || undefined);
       toast.success('Commentaire ajouté');
       
-      // Mettre à jour l'état local avec le nouveau commentaire
+      // Mettre à jour l'état avec le nouveau commentaire
       const newFeedback = {
         id: comment.id,
         author: comment.author,
@@ -179,7 +179,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       if (isTagged) {
         await removeTagFromDesign(item.id, tagId);
         toast.success('Tag retiré');
-        // Mettre à jour l'état local directement
+        // Mettre à jour l'état directement
         const updated = {
           ...item,
           tags: item.tags.filter((t) => t.id !== tagId),
@@ -313,7 +313,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       const version = await addVersion(item.id, publicUrl, 'Nouvelle version uploadée');
       toast.success('Version uploadée avec succès');
       
-      // Mettre à jour l'état local avec la nouvelle version
+      // Mettre à jour l'état avec la nouvelle version
       const newVersion = {
         id: version.id,
         version: version.version_number.toString(),
@@ -400,7 +400,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       setLocationData(undefined);
     }
     
-    // Mettre à jour l'état local directement
+    // Mettre à jour l'état directement
     const updated = {
       ...item,
       locationId,
@@ -417,7 +417,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       await updateRating(item.id, finalRating);
       toast.success(finalRating ? `Note: ${finalRating} étoile${finalRating > 1 ? 's' : ''}` : 'Note retirée');
       
-      // Mettre à jour l'état local directement
+      // Mettre à jour l'état directement
       const updated = { ...item, rating: finalRating };
       onDesignUpdate?.(updated);
       
@@ -500,10 +500,10 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       {/* Scrollable Content - Compact */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-3">
-          {/* Image Preview - Compact */}
+          {/* Image Preview - Compact - Utilise thumbnail */}
           <div className="rounded-lg overflow-hidden bg-gray-100 shadow-sm">
             <img
-              src={item.imageUrl}
+              src={item.thumbnailUrl || item.imageUrl}
               alt={item.title}
               className="w-full h-auto object-contain max-h-[300px]"
             />

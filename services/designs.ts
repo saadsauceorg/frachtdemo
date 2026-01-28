@@ -5,6 +5,8 @@ export interface DesignDB {
   id: string;
   title: string;
   image_url: string;
+  image_original_url?: string | null;
+  image_thumb_url?: string | null;
   aspect_ratio: number;
   status: 'draft' | 'review' | 'approved';
   project?: string;
@@ -57,6 +59,9 @@ export async function getDesigns(): Promise<DesignItem[]> {
   const { data, error } = await supabase
     .from('designs')
     .select('*')
+    // UNIQUEMENT Supabase Storage - image_original_url doit exister et être une URL https://
+    .not('image_original_url', 'is', null)
+    .like('image_original_url', 'https://%')
     .order('is_pinned', { ascending: false })
     .order('order_index', { ascending: true })
     .order('created_at', { ascending: false });
@@ -121,10 +126,15 @@ export async function getDesigns(): Promise<DesignItem[]> {
           }
         : undefined;
 
+      // UNIQUEMENT Supabase Storage
+      const originalUrl = design.image_original_url;
+      const thumbUrl = design.image_thumb_url;
+      
       return {
         id: design.id,
         title: design.title,
-        imageUrl: design.image_url,
+        imageUrl: originalUrl,
+        thumbnailUrl: thumbUrl || undefined,
         aspectRatio: Number(design.aspect_ratio),
         project: design.project || 'Projet Fracht',
         location: design.location || 'France',
@@ -217,10 +227,15 @@ export async function getDesignById(designId: string): Promise<DesignItem | null
       }
     : undefined;
 
+  // UNIQUEMENT Supabase Storage
+  const originalUrl = design.image_original_url;
+  const thumbUrl = design.image_thumb_url;
+  
   return {
     id: design.id,
     title: design.title,
-    imageUrl: design.image_url,
+    imageUrl: originalUrl,
+    thumbnailUrl: thumbUrl || undefined,
     aspectRatio: Number(design.aspect_ratio),
     project: design.project || 'Projet Fracht',
     location: design.location || 'France',
@@ -251,15 +266,15 @@ export async function getDesignById(designId: string): Promise<DesignItem | null
   } as DesignItem;
 }
 
-// ✅ Upload image avec détection automatique des dimensions
+// ✅ Upload image avec génération de thumbnail + original
 export async function uploadImageAndGetDimensions(file: File): Promise<{
-  url: string;
+  originalUrl: string;
+  thumbUrl: string;
   width: number;
   height: number;
   aspectRatio: number;
 }> {
   return new Promise((resolve, reject) => {
-    // Créer une image pour détecter les dimensions
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
 
@@ -269,51 +284,81 @@ export async function uploadImageAndGetDimensions(file: File): Promise<{
       const aspectRatio = width / height;
 
       try {
-        // Upload vers Supabase Storage
         const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
-        // Utiliser le bucket "files" qui existe réellement dans Supabase
+        const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const BUCKET_NAME = 'files';
         
-        // Convertir le File en ArrayBuffer pour éviter les problèmes de type
-        const arrayBuffer = await file.arrayBuffer();
+        // Générer thumbnail (max 800px de largeur, qualité 80%)
+        const thumbCanvas = document.createElement('canvas');
+        const thumbMaxWidth = 800;
+        const thumbScale = Math.min(thumbMaxWidth / width, 1);
+        thumbCanvas.width = width * thumbScale;
+        thumbCanvas.height = height * thumbScale;
+        const thumbCtx = thumbCanvas.getContext('2d');
+        if (!thumbCtx) throw new Error('Impossible de créer le contexte canvas');
+        thumbCtx.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
         
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        // Convertir thumbnail en blob
+        const thumbBlob = await new Promise<Blob>((resolve, reject) => {
+          thumbCanvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Erreur génération thumbnail'));
+          }, `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`, 0.8);
+        });
+        
+        // Upload original
+        const originalArrayBuffer = await file.arrayBuffer();
+        const originalFileName = `${baseFileName}.${fileExt}`;
+        const { data: originalUpload, error: originalError } = await supabase.storage
           .from(BUCKET_NAME)
-          .upload(fileName, arrayBuffer, {
+          .upload(originalFileName, originalArrayBuffer, {
             contentType: file.type || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
             upsert: false,
-            cacheControl: '3600',
+            cacheControl: '31536000', // 1 an cache pour originaux
           });
 
-        if (uploadError) {
-          console.error('Erreur upload:', uploadError);
-          // Message d'erreur plus détaillé
-          if (uploadError.message?.includes('Bucket not found')) {
-            throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas. Veuillez vérifier votre configuration Supabase Storage.`);
-          } else if (uploadError.message?.includes('new row violates row-level security')) {
-            throw new Error(`Permissions insuffisantes. Vérifiez les politiques RLS du bucket "${BUCKET_NAME}" dans Supabase.`);
+        if (originalError) {
+          if (originalError.message?.includes('Bucket not found')) {
+            throw new Error(`Le bucket "${BUCKET_NAME}" n'existe pas.`);
           }
-          throw new Error(`Erreur lors de l'upload: ${uploadError.message}`);
+          throw new Error(`Erreur upload original: ${originalError.message}`);
         }
 
-        if (!uploadData?.path) {
-          throw new Error('Erreur: aucun chemin retourné après l\'upload');
-        }
-
-        const { data: { publicUrl } } = supabase.storage
+        // Upload thumbnail
+        const thumbArrayBuffer = await thumbBlob.arrayBuffer();
+        const thumbFileName = `${baseFileName}_thumb.${fileExt}`;
+        const { data: thumbUpload, error: thumbError } = await supabase.storage
           .from(BUCKET_NAME)
-          .getPublicUrl(uploadData.path);
+          .upload(thumbFileName, thumbArrayBuffer, {
+            contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+            upsert: false,
+            cacheControl: '31536000', // 1 an cache pour thumbnails
+          });
 
-        if (!publicUrl) {
-          throw new Error('Impossible d\'obtenir l\'URL publique du fichier');
+        if (thumbError) {
+          throw new Error(`Erreur upload thumbnail: ${thumbError.message}`);
+        }
+
+        if (!originalUpload?.path || !thumbUpload?.path) {
+          throw new Error('Erreur: chemins manquants après upload');
+        }
+
+        const { data: { publicUrl: originalUrl } } = supabase.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(originalUpload.path);
+        const { data: { publicUrl: thumbUrl } } = supabase.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(thumbUpload.path);
+
+        if (!originalUrl || !thumbUrl) {
+          throw new Error('Impossible d\'obtenir les URLs publiques');
         }
 
         URL.revokeObjectURL(objectUrl);
         
         resolve({
-          url: publicUrl,
+          originalUrl,
+          thumbUrl,
           width,
           height,
           aspectRatio,
@@ -334,32 +379,32 @@ export async function uploadImageAndGetDimensions(file: File): Promise<{
 }
 
 export async function createDesign(
-  imageUrl: string,
+  originalUrl: string,
+  thumbUrl: string,
   aspectRatio: number,
   width?: number,
   height?: number
 ): Promise<DesignItem> {
-  // Récupérer le dernier order_index pour placer le nouveau design à la fin
-  const { data: lastDesign } = await supabase
+  // Récupérer le dernier order_index (gérer le cas où la table est vide)
+  const { data: designs, error: orderError } = await supabase
     .from('designs')
     .select('order_index')
     .order('order_index', { ascending: false })
-    .limit(1)
-    .single();
+    .limit(1);
 
-  const nextOrderIndex = lastDesign?.order_index !== null && lastDesign?.order_index !== undefined 
-    ? lastDesign.order_index + 1 
+  const nextOrderIndex = designs && designs.length > 0 && designs[0]?.order_index !== null && designs[0]?.order_index !== undefined
+    ? designs[0].order_index + 1 
     : 0;
 
-  // Générer un titre automatique basé sur le numéro
   const title = `Design #${nextOrderIndex + 1}`;
 
-  // Insérer seulement les colonnes qui existent dans la table (pas width ni height)
   const { data, error } = await supabase
     .from('designs')
     .insert({
       title,
-      image_url: imageUrl,
+      image_url: originalUrl, // Garder pour compatibilité
+      image_original_url: originalUrl,
+      image_thumb_url: thumbUrl,
       aspect_ratio: aspectRatio,
       status: 'draft',
       project: 'Projet Fracht',
@@ -372,7 +417,6 @@ export async function createDesign(
 
   if (error) throw error;
 
-  // Récupérer le design complet avec toutes les relations
   const fullDesign = await getDesignById(data.id);
   if (!fullDesign) throw new Error('Erreur lors de la création du design');
 

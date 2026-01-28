@@ -35,12 +35,12 @@ export const FrachtConsole: React.FC = () => {
 
   const loadDesigns = async () => {
     try {
-      // Pas de setIsLoading(true) ici si on a déjà des données ou si on veut éviter le flash
       const data = await getDesigns();
       setDesigns(data);
     } catch (error) {
       console.error('Error loading designs:', error);
       toast.error('Erreur lors du chargement des designs');
+      setDesigns([]);
     } finally {
       setIsLoading(false);
     }
@@ -111,7 +111,7 @@ export const FrachtConsole: React.FC = () => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
   }, []);
 
-  // Mettre à jour un design spécifique dans l'état local
+  // Mettre à jour un design spécifique dans l'état
   const updateDesignInState = useCallback((updatedDesign: DesignItem) => {
     setDesigns((prev) => 
       prev.map((d) => (d.id === updatedDesign.id ? updatedDesign : d))
@@ -141,7 +141,7 @@ export const FrachtConsole: React.FC = () => {
     }
   }, [refreshDesign]);
 
-  // Supprimer un design de l'état local (la suppression de la base de données est gérée par MasonryGrid)
+  // Supprimer un design de l'état (la suppression de la base de données est gérée par MasonryGrid)
   const handleDelete = useCallback((designId: string) => {
     setDesigns((prev) => prev.filter((d) => d.id !== designId));
     // Fermer le panel si l'item supprimé était sélectionné
@@ -150,24 +150,21 @@ export const FrachtConsole: React.FC = () => {
     }
   }, [selectedItem, handleClosePanel]);
 
-  // Ajouter une nouvelle image
-  const handleAddImage = useCallback(async (file: File) => {
+  // Ajouter une nouvelle image (sans toast individuel pour permettre le batch)
+  const handleAddImage = useCallback(async (file: File, showToast: boolean = false) => {
     try {
       const { uploadImageAndGetDimensions, createDesign } = await import('../services/designs');
-      const { url, aspectRatio, width, height } = await uploadImageAndGetDimensions(file);
-      const newDesign = await createDesign(url, aspectRatio, width, height);
-      toast.success('Image ajoutée avec succès');
-      // Ajouter le nouveau design à l'état local
+      const { originalUrl, thumbUrl, aspectRatio, width, height } = await uploadImageAndGetDimensions(file);
+      const newDesign = await createDesign(originalUrl, thumbUrl, aspectRatio, width, height);
+      if (showToast) {
+        toast.success('Image ajoutée avec succès');
+      }
+      // Ajouter le nouveau design à l'état
       setDesigns((prev) => [...prev, newDesign]);
     } catch (error: any) {
       const errorMessage = error?.message || 'Erreur inconnue lors de l\'ajout de l\'image';
       console.error('Erreur lors de l\'ajout de l\'image:', error);
-      toast.error(errorMessage, {
-        duration: 5000,
-        description: errorMessage.includes('Bucket') 
-          ? 'Vérifiez que le bucket "files" existe et est public dans Supabase Storage'
-          : undefined
-      });
+      throw error; // Propager l'erreur pour le gestionnaire batch
     }
   }, []);
 
@@ -189,15 +186,37 @@ export const FrachtConsole: React.FC = () => {
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      handleAddImage(file);
-    } else {
-      toast.error('Veuillez déposer une image');
+    
+    const fileList = Array.from(e.dataTransfer.files) as File[];
+    const files = fileList.filter(file => file.type.startsWith('image/'));
+    
+    if (files.length === 0) {
+      toast.error('Veuillez déposer des images');
+      return;
+    }
+    
+    // Traiter toutes les images en parallèle
+    toast.info(`Ajout de ${files.length} image(s)...`);
+    const promises = files.map(file => handleAddImage(file, false));
+    
+    try {
+      const results = await Promise.allSettled(promises);
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const errorCount = results.filter(r => r.status === 'rejected').length;
+      
+      if (successCount > 0) {
+        toast.success(`${successCount} image(s) ajoutée(s) avec succès`);
+      }
+      if (errorCount > 0) {
+        toast.error(`${errorCount} image(s) n'ont pas pu être ajoutée(s)`);
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout des images:', error);
+      toast.error('Erreur lors de l\'ajout des images');
     }
   }, [handleAddImage]);
 
@@ -217,6 +236,16 @@ export const FrachtConsole: React.FC = () => {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isPanelOpen, handleClosePanel]);
+
+  // Timeout de sécurité pour éviter le blocage
+  useEffect(() => {
+    if (!isLoading) return;
+    const timeout = setTimeout(() => {
+      console.warn('Chargement trop long, arrêt du loading');
+      setIsLoading(false);
+    }, 10000); // 10 secondes max
+    return () => clearTimeout(timeout);
+  }, [isLoading]);
 
   if (isLoading && designs.length === 0) {
     return (
@@ -251,10 +280,10 @@ export const FrachtConsole: React.FC = () => {
                   <div className="text-center">
                     <div className="text-4xl mb-4">📷</div>
                     <p className="text-lg font-semibold text-fracht-blue fracht-heading">
-                      Déposez votre image ici
+                      Déposez vos images ici
                     </p>
                     <p className="text-sm text-gray-600 mt-2 fracht-label">
-                      Les images seront ajoutées automatiquement
+                      Vous pouvez déposer plusieurs images à la fois
                     </p>
                   </div>
                 </div>
@@ -266,7 +295,7 @@ export const FrachtConsole: React.FC = () => {
               onUpdate={(designId) => handleUpdate(designId)}
               onDelete={handleDelete}
               onReorder={(reorderedItems) => {
-                // Mettre à jour l'ordre dans l'état local
+                // Mettre à jour l'ordre dans l'état
                 const reorderedIds = reorderedItems.map(item => item.id);
                 setDesigns((prev) => {
                   const sorted = [...prev].sort((a, b) => {

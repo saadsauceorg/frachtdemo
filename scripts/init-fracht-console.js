@@ -102,7 +102,7 @@ async function importExistingImages() {
         .from('designs')
         .insert({
           title,
-          image_url: `/designs/${file}`, // Utiliser le chemin local pour l'instant
+          image_url: `/designs/${file}`, // Chemin temporaire (à migrer vers Supabase Storage)
           aspect_ratio: aspectRatio,
           status: 'draft',
           project: 'Projet Fracht',
