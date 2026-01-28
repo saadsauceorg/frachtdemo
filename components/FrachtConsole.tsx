@@ -35,7 +35,7 @@ export const FrachtConsole: React.FC = () => {
 
   const loadDesigns = async () => {
     try {
-      setIsLoading(true);
+      // Pas de setIsLoading(true) ici si on a déjà des données ou si on veut éviter le flash
       const data = await getDesigns();
       setDesigns(data);
     } catch (error) {
@@ -218,12 +218,12 @@ export const FrachtConsole: React.FC = () => {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isPanelOpen, handleClosePanel]);
 
-  if (isLoading) {
+  if (isLoading && designs.length === 0) {
     return (
       <div className="fracht-console min-h-screen bg-white grid-bg flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-fracht-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Chargement des designs...</p>
+          <p className="text-gray-600 font-medium">Chargement des designs...</p>
         </div>
       </div>
     );

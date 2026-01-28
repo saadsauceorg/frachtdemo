@@ -132,16 +132,29 @@ const SortableItem: React.FC<SortableItemProps> = ({
             <HiStar className={`w-3 h-3 ${item.isPinned ? 'fill-current' : ''}`} />
           </button>
 
-          {/* Drag Handle - Top Right */}
-          <div
-            {...attributes}
-            {...listeners}
-            className="absolute top-2 right-2 p-1 rounded bg-white/90 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-all duration-200 z-10 backdrop-blur-sm cursor-grab active:cursor-grabbing"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M7 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 14a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 14a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
-            </svg>
+          {/* Top Right Actions (Drag Handle & Fullscreen) */}
+          <div className="absolute top-2 right-2 flex gap-1 z-10">
+            {/* Fullscreen Button */}
+            <button
+              onClick={(e) => onFullscreenClick(e, item)}
+              className="p-1 rounded bg-white/90 text-gray-500 opacity-0 group-hover:opacity-100 hover:bg-fracht-blue-soft hover:text-fracht-blue transition-all duration-200 backdrop-blur-sm"
+              aria-label="Ouvrir en plein écran"
+              title="Ouvrir en plein écran"
+            >
+              <HiArrowsExpand className="w-3 h-3" />
+            </button>
+
+            {/* Drag Handle */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="p-1 rounded bg-white/90 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-all duration-200 backdrop-blur-sm cursor-grab active:cursor-grabbing"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 14a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM13 14a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
+              </svg>
+            </div>
           </div>
 
           {/* Rating Badge - Bottom Left */}
@@ -186,14 +199,6 @@ const SortableItem: React.FC<SortableItemProps> = ({
           </div>
           {/* Boutons d'action en bas à droite */}
           <div className="flex items-center justify-end gap-1 mt-1.5">
-            <button
-              onClick={(e) => onFullscreenClick(e, item)}
-              className="p-1 rounded text-gray-500 hover:bg-fracht-blue-soft hover:text-fracht-blue transition-all opacity-0 group-hover:opacity-100"
-              aria-label="Ouvrir en plein écran"
-              title="Ouvrir en plein écran"
-            >
-              <HiArrowsExpand className="w-3 h-3" />
-            </button>
             <button
               onClick={(e) => onLocationClick(e, item)}
               className={`p-1 rounded transition-all opacity-0 group-hover:opacity-100 ${
