@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import { HiBell, HiPlus } from 'react-icons/hi';
 import { ActivityLogDrawer } from './ActivityLogDrawer';
+import { ProfileOverlay } from './ProfileOverlay';
 
 interface HeaderProps {
   onAddDesign?: () => void;
   onDesignClick?: (designId: string) => void;
+  onLogout?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick }) => {
+export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick, onLogout }) => {
   const [avatarError, setAvatarError] = useState(false);
   const [isActivityDrawerOpen, setIsActivityDrawerOpen] = useState(false);
+  const [isProfileOverlayOpen, setIsProfileOverlayOpen] = useState(false);
   
   return (
     <>
@@ -48,13 +51,17 @@ export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick }) =>
             <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
           </button>
         {avatarError ? (
-          <div className="w-7 h-7 md:w-8 md:h-8 bg-gradient-to-br from-fracht-blue via-fracht-blue-light to-fracht-blue rounded-full shadow-sm"></div>
+          <div 
+            className="w-7 h-7 md:w-8 md:h-8 bg-gradient-to-br from-fracht-blue via-fracht-blue-light to-fracht-blue rounded-full shadow-sm cursor-pointer hover:ring-2 hover:ring-fracht-blue/50 transition-all"
+            onClick={() => setIsProfileOverlayOpen(true)}
+          ></div>
         ) : (
           <img 
             src="/avatar.jpg" 
             alt="Profil utilisateur"
             className="w-7 h-7 md:w-8 md:h-8 rounded-full shadow-sm object-cover border-2 border-white cursor-pointer hover:ring-2 hover:ring-fracht-blue/50 transition-all"
             onError={() => setAvatarError(true)}
+            onClick={() => setIsProfileOverlayOpen(true)}
           />
         )}
       </div>
@@ -63,6 +70,11 @@ export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick }) =>
         isOpen={isActivityDrawerOpen} 
         onClose={() => setIsActivityDrawerOpen(false)}
         onDesignClick={onDesignClick}
+      />
+      <ProfileOverlay
+        isOpen={isProfileOverlayOpen}
+        onClose={() => setIsProfileOverlayOpen(false)}
+        onLogout={onLogout || (() => {})}
       />
     </>
   );

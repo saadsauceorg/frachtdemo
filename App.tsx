@@ -17,6 +17,11 @@ const App: React.FC = () => {
     setIsAuthenticated(true);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('fracht_authenticated');
+    setIsAuthenticated(false);
+  };
+
   if (!isAuthenticated) {
     return (
       <>
@@ -26,7 +31,7 @@ const App: React.FC = () => {
     );
   }
 
-  return <FrachtConsole />;
+  return <FrachtConsole onLogout={handleLogout} />;
 };
 
 export default App;

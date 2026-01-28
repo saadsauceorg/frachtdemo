@@ -357,9 +357,31 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+  // Réorganiser les éléments pour un ordre horizontal (ligne par ligne) avec CSS columns
+  const reorganizeForHorizontalOrder = (items: DesignItem[], numColumns: number): DesignItem[] => {
+    if (numColumns <= 1) return items;
+    
+    const reorganized: DesignItem[] = [];
+    const numRows = Math.ceil(items.length / numColumns);
+    
+    // Pour chaque position dans la colonne CSS, ajouter les éléments ligne par ligne
+    for (let col = 0; col < numColumns; col++) {
+      for (let row = 0; row < numRows; row++) {
+        const index = row * numColumns + col;
+        if (index < items.length) {
+          reorganized.push(items[index]);
+        }
+      }
+    }
+    
+    return reorganized;
+  };
+
   useEffect(() => {
-    setItemsState(items);
-  }, [items]);
+    // Réorganiser pour l'ordre horizontal avec CSS columns
+    const reorganized = reorganizeForHorizontalOrder(items, columns);
+    setItemsState(reorganized);
+  }, [items, columns]);
 
   useEffect(() => {
     const updateColumns = () => {

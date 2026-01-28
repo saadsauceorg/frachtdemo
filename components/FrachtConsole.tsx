@@ -10,7 +10,11 @@ import { FilterBar } from './FilterBar';
 import { getDesigns, getDesignById } from '../services/designs';
 import '../styles/fracht.css';
 
-export const FrachtConsole: React.FC = () => {
+interface FrachtConsoleProps {
+  onLogout?: () => void;
+}
+
+export const FrachtConsole: React.FC<FrachtConsoleProps> = ({ onLogout }) => {
   const [selectedItem, setSelectedItem] = useState<DesignItem | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [designs, setDesigns] = useState<DesignItem[]>([]);
@@ -103,20 +107,34 @@ export const FrachtConsole: React.FC = () => {
       items = items.filter((item) => !item.locationId);
     }
 
-    // Sort by rating
-    if (filters.sortBy === 'rating_desc') {
-      items = items.sort((a, b) => {
+    // Trier : les photos épinglées en premier, puis les autres
+    items = items.sort((a, b) => {
+      // Priorité 1: Les épinglées d'abord
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      
+      // Si les deux sont épinglées ou non épinglées, respecter l'ordre existant
+      // Priorité 2: order_index pour maintenir l'ordre de drag & drop
+      if (a.isPinned && b.isPinned) {
+        const orderA = a.orderIndex ?? 0;
+        const orderB = b.orderIndex ?? 0;
+        if (orderA !== orderB) return orderA - orderB;
+      }
+      
+      // Priorité 3: Sort by rating si spécifié
+      if (filters.sortBy === 'rating_desc') {
         const ratingA = a.rating ?? 0;
         const ratingB = b.rating ?? 0;
-        return ratingB - ratingA;
-      });
-    } else if (filters.sortBy === 'rating_asc') {
-      items = items.sort((a, b) => {
+        if (ratingA !== ratingB) return ratingB - ratingA;
+      } else if (filters.sortBy === 'rating_asc') {
         const ratingA = a.rating ?? 0;
         const ratingB = b.rating ?? 0;
-        return ratingA - ratingB;
-      });
-    }
+        if (ratingA !== ratingB) return ratingA - ratingB;
+      }
+      
+      // Priorité 4: Date de création (plus récent en premier)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
     return items;
   }, [designs, filters]);
@@ -315,12 +333,15 @@ export const FrachtConsole: React.FC = () => {
   return (
     <div className="fracht-console min-h-screen bg-white grid-bg">
       <Toaster position="top-right" />
-      <Header onDesignClick={(designId) => {
-        const design = designs.find(d => d.id === designId);
-        if (design) {
-          handleItemClick(design);
-        }
-      }} />
+      <Header 
+        onDesignClick={(designId) => {
+          const design = designs.find(d => d.id === designId);
+          if (design) {
+            handleItemClick(design);
+          }
+        }}
+        onLogout={onLogout}
+      />
       <div className="flex">
         <main className="flex-1 pt-16 bg-fracht-cream/50">
           <FilterBar filters={filters} onFilterChange={handleFilterChange} items={designs} />

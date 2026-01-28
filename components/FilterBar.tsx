@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { FilterState, DesignItem, SortOption, LocationFilter } from '../types/fracht';
-import { HiX, HiSearch, HiStar, HiSortAscending, HiSortDescending, HiLocationMarker, HiCheckCircle } from 'react-icons/hi';
+import { HiX, HiSearch, HiStar, HiLocationMarker, HiCheckCircle } from 'react-icons/hi';
 
 interface FilterBarProps {
   filters: FilterState;
@@ -101,7 +101,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFilterChange, i
           }`}
           title="Trier par note"
         >
-          <HiSortDescending className="w-3.5 h-3.5" />
+          <HiStar className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Note</span>
         </button>
 

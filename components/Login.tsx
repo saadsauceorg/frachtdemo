@@ -7,10 +7,15 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('Salma.ELkasri@ma.fracht.africa');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== 'FRACHT@2026') {
+      alert('Mot de passe incorrect');
+      return;
+    }
     onLogin();
   };
 
@@ -49,92 +54,166 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen bg-fracht-blue flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Cercles bleus animés en arrière-plan */}
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, #0B3C5D 0%, #0E4A6F 50%, #1E5A7F 100%)',
+      }}
+    >
+      {/* Formes abstraites animées en arrière-plan */}
       <motion.div
-        className="absolute top-20 left-20 w-96 h-96 rounded-full bg-fracht-blue-light opacity-30 blur-3xl"
+        className="absolute top-20 left-20 w-96 h-96 rounded-full opacity-20 blur-3xl"
+        style={{ background: 'linear-gradient(135deg, #0E4A6F, #1E5A7F)' }}
         variants={circleVariants}
         animate="animate"
         transition={transition}
       />
       <motion.div
-        className="absolute bottom-20 right-20 w-80 h-80 rounded-full bg-fracht-blue-accent opacity-25 blur-3xl"
+        className="absolute bottom-20 right-20 w-80 h-80 rounded-full opacity-15 blur-3xl"
+        style={{ background: 'linear-gradient(135deg, #1E5A7F, #0E4A6F)' }}
         variants={circleVariants2}
         animate="animate"
         transition={{ ...transition, duration: 10 }}
       />
       <motion.div
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-fracht-blue-light opacity-20 blur-3xl"
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 blur-3xl"
+        style={{ background: 'linear-gradient(135deg, #0E4A6F, #0B3C5D)' }}
         variants={circleVariants3}
         animate="animate"
         transition={{ ...transition, duration: 12 }}
       />
-      <motion.div
-        className="absolute top-40 right-40 w-64 h-64 rounded-full bg-fracht-blue-accent opacity-25 blur-2xl"
-        variants={circleVariants}
-        animate="animate"
-        transition={{ ...transition, duration: 9 }}
-      />
 
-      {/* Carte de login avec ombre prononcée */}
+      {/* Conteneur principal divisé en deux sections - Compact */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-md bg-white rounded-2xl p-10 shadow-2xl"
+        className="relative z-10 w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
         style={{
-          boxShadow: '0 25px 50px -12px rgba(11, 60, 93, 0.4), 0 0 0 1px rgba(11, 60, 93, 0.05)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
         }}
       >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="text-center mb-10"
+        {/* Section supérieure - Header bleu ultra compact */}
+        <div 
+          className="relative px-5 py-4"
+          style={{
+            background: 'linear-gradient(135deg, #0B3C5D 0%, #0E4A6F 100%)',
+          }}
         >
-          <img 
-            src="https://www.frachtgroup.com/themes/custom/fracht/images/frachtlogowhite.png" 
-            alt="Fracht"
-            className="h-12 w-auto mx-auto mb-8"
-            style={{ filter: 'brightness(0) saturate(100%) invert(9%) sepia(47%) saturate(2000%) hue-rotate(180deg) brightness(95%) contrast(95%)' }}
-          />
-          <h1 className="text-2xl font-bold text-fracht-blue mb-3 tracking-tight">Console Design</h1>
-          <p className="text-gray-500 text-sm">Connectez-vous pour accéder à vos projets</p>
-        </motion.div>
-
-        <motion.form
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
-          onSubmit={handleSubmit}
-          className="space-y-6"
-        >
-          <div className="space-y-3">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1 block">
-              Email professionnel
-            </label>
-            <motion.input
-              whileFocus={{ scale: 1.01 }}
-              transition={{ duration: 0.2 }}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 focus:border-fracht-blue transition-all placeholder-gray-400"
-              placeholder="votre@email.com"
-              required
-              autoFocus
-            />
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="submit"
-            className="w-full bg-fracht-blue text-white py-4 rounded-xl font-semibold hover:bg-fracht-blue-light transition-all shadow-lg shadow-fracht-blue/30 active:scale-[0.98]"
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.4 }}
+            className="relative z-10 flex items-center justify-between"
           >
-            Accéder à la console
-          </motion.button>
-        </motion.form>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }}
+              className="flex items-baseline gap-2"
+            >
+              <h1
+                className="text-3xl font-bold text-white tracking-tight leading-tight"
+                style={{
+                  fontFamily: "'Orbitron', 'Rajdhani', 'Exo 2', sans-serif",
+                  fontWeight: 800,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Abilis
+              </h1>
+              <span
+                className="text-lg font-semibold text-white/90 tracking-wide"
+                style={{
+                  fontFamily: "'Orbitron', 'Rajdhani', 'Exo 2', sans-serif",
+                  fontWeight: 600,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Motion
+              </span>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.4, duration: 0.4 }}
+              className="flex flex-col items-end gap-1"
+            >
+              <span className="text-[9px] text-white/70 font-medium tracking-wide uppercase">
+                Accès accordé à
+              </span>
+              <img
+                src="https://www.frachtgroup.com/themes/custom/fracht/images/frachtlogowhite.png"
+                alt="Fracht Group"
+                className="h-6 w-auto opacity-90"
+                style={{ filter: 'brightness(0) invert(1)' }}
+              />
+            </motion.div>
+          </motion.div>
+        </div>
+
+        {/* Section inférieure - Zone blanche ultra compacte */}
+        <div className="bg-white px-5 py-5">
+          <motion.form
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            onSubmit={handleSubmit}
+            className="space-y-3"
+          >
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700 block">
+                Email
+              </label>
+              <motion.input
+                whileFocus={{ scale: 1.01 }}
+                transition={{ duration: 0.2 }}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #E5E9ED 0%, #D1D8DE 100%)',
+                  border: 'none',
+                }}
+                placeholder="votre@email.com"
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700 block">
+                Mot de passe
+              </label>
+              <motion.input
+                whileFocus={{ scale: 1.01 }}
+                transition={{ duration: 0.2 }}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #E5E9ED 0%, #D1D8DE 100%)',
+                  border: 'none',
+                }}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              className="w-full bg-fracht-blue text-white py-2.5 rounded-full font-semibold hover:bg-fracht-blue-light transition-all shadow-lg shadow-fracht-blue/30 active:scale-[0.98] mt-3 uppercase tracking-wide text-sm"
+            >
+              Se connecter
+            </motion.button>
+          </motion.form>
+        </div>
       </motion.div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiX, HiClock, HiTag, HiChat, HiPhotograph, HiTrash, HiPencil, HiCheckCircle, HiLocationMarker, HiStar } from 'react-icons/hi';
+import { HiX, HiClock, HiTag, HiTag as HiChatIcon, HiCamera, HiTrash, HiPencil, HiCheckCircle, HiLocationMarker, HiStar } from 'react-icons/hi';
 import { ActivityLog, getRecentActivities, getAllActivities } from '../services/activityLog';
 // Formatage de date simple sans dépendance externe
 
@@ -15,13 +15,13 @@ const getActivityIcon = (type: ActivityLog['activity_type']) => {
     case 'comment_added':
     case 'comment_edited':
     case 'comment_deleted':
-      return <HiChat className="w-4 h-4" />;
+      return <HiChatIcon className="w-4 h-4" />;
     case 'tag_added':
     case 'tag_removed':
       return <HiTag className="w-4 h-4" />;
     case 'image_added':
     case 'image_deleted':
-      return <HiPhotograph className="w-4 h-4" />;
+      return <HiCamera className="w-4 h-4" />;
     case 'version_added':
       return <HiPencil className="w-4 h-4" />;
     case 'title_updated':
