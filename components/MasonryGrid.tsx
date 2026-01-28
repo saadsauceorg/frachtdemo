@@ -379,7 +379,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     if (oldIndex === -1 || newIndex === -1) return;
 
     // Mise à jour optimiste de l'UI
-    const newItems = arrayMove(localItems, oldIndex, newIndex);
+    const newItems = arrayMove(localItems, oldIndex, newIndex) as DesignItem[];
     setLocalItems(newItems);
     setIsReordering(true);
 

@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 import { DesignItem } from '../types/fracht';
 import { 
   HiX, 
-  HiMicrophone,
   HiClock,
   HiPlus,
   HiLocationMarker
 } from 'react-icons/hi';
+import { HiMicrophone } from 'react-icons/hi2';
 import { FiUpload } from 'react-icons/fi';
 import { Waveform } from './Waveform';
 import { LocationSelector } from './LocationSelector';
@@ -656,7 +656,6 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
                   <span className="text-[9px]">{formatTime(recordingTime)}</span>
                 ) : (
                   <>
-                    {/* @ts-ignore */}
                     <HiMicrophone className="w-3 h-3" />
                   </>
                 )}

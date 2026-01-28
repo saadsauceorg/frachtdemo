@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiExclamation } from 'react-icons/hi';
+import { HiExclamationCircle } from 'react-icons/hi';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -55,7 +55,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                       : 'bg-blue-100 text-blue-600'
                   }`}
                 >
-                  <HiExclamation className="w-5 h-5" {...({} as any)} />
+                  <HiExclamationCircle className="w-5 h-5" />
                 </div>
                 <div className="flex-1">
                   <h3 className="text-sm font-semibold text-gray-900 mb-1 fracht-heading">

@@ -181,8 +181,8 @@ export const useSpeechRecognition = (options: UseSpeechRecognitionOptions = {}) 
 // Types pour TypeScript
 declare global {
   interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
   }
 }
 
