@@ -898,6 +898,54 @@ export async function createLocation(name: string, imageFile: File): Promise<Loc
   return data;
 }
 
+// Supprimer un emplacement
+export async function deleteLocation(locationId: string): Promise<void> {
+  // Récupérer l'emplacement pour obtenir l'URL de l'image
+  const { data: location, error: fetchError } = await supabase
+    .from('locations')
+    .select('image_url, name')
+    .eq('id', locationId)
+    .single();
+
+  if (fetchError) throw fetchError;
+  if (!location) throw new Error('Emplacement non trouvé');
+
+  // Vérifier si des designs utilisent cet emplacement
+  const { data: designsUsingLocation } = await supabase
+    .from('designs')
+    .select('id')
+    .eq('location_id', locationId)
+    .limit(1);
+
+  if (designsUsingLocation && designsUsingLocation.length > 0) {
+    throw new Error('Impossible de supprimer cet emplacement car il est utilisé par des designs');
+  }
+
+  // Supprimer l'emplacement de la base de données
+  const { error: deleteError } = await supabase
+    .from('locations')
+    .delete()
+    .eq('id', locationId);
+
+  if (deleteError) throw deleteError;
+
+  // Optionnel: Supprimer l'image du storage si elle existe
+  if (location.image_url) {
+    try {
+      const urlParts = location.image_url.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const filePath = `locations/${fileName}`;
+      
+      await supabase.storage
+        .from('files')
+        .remove([filePath]);
+    } catch (storageError) {
+      // Ne pas faire échouer la suppression si l'image ne peut pas être supprimée
+      console.warn('Impossible de supprimer l\'image du storage:', storageError);
+    }
+  }
+}
+
 // Pin
 export async function togglePin(designId: string, isPinned: boolean): Promise<void> {
   const { error } = await supabase

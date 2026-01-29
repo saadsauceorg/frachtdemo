@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiCheckCircle, HiX, HiCamera } from 'react-icons/hi';
-import { getLocations, updateDesignLocation, createLocation, LocationDB } from '../services/designs';
+import { HiCheckCircle, HiX, HiCamera, HiTrash } from 'react-icons/hi';
+import { getLocations, updateDesignLocation, createLocation, deleteLocation, LocationDB } from '../services/designs';
 import { toast } from 'sonner';
 
 interface LocationSelectorProps {
@@ -22,6 +22,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -56,6 +57,35 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
       toast.error('Erreur lors de la mise à jour');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteClick = async (e: React.MouseEvent, locationId: string) => {
+    e.stopPropagation();
+    
+    // Première confirmation
+    if (pendingDeleteId !== locationId) {
+      setPendingDeleteId(locationId);
+      toast('', { duration: 2000 }); // Toast sans texte
+      return;
+    }
+
+    // Deuxième confirmation - Supprimer réellement
+    try {
+      await deleteLocation(locationId);
+      await loadLocations();
+      setPendingDeleteId(null);
+      
+      // Si l'emplacement supprimé était sélectionné, désélectionner
+      if (selectedLocationId === locationId) {
+        await handleSelect(null);
+      }
+      
+      toast.success('Emplacement supprimé');
+    } catch (error: any) {
+      console.error('Error deleting location:', error);
+      toast.error(error.message || 'Erreur lors de la suppression');
+      setPendingDeleteId(null);
     }
   };
 
@@ -336,16 +366,26 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
                 {/* Emplacements */}
                 {locations.map((location) => {
                   const isSelected = selectedLocationId === location.id;
+                  const isPendingDelete = pendingDeleteId === location.id;
                   return (
                     <motion.button
                       key={location.id}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => handleSelect(location.id)}
+                      onClick={() => {
+                        // Si en attente de suppression, annuler la suppression au lieu de sélectionner
+                        if (isPendingDelete) {
+                          setPendingDeleteId(null);
+                        } else {
+                          handleSelect(location.id);
+                        }
+                      }}
                       disabled={isSaving}
                       className={`relative group rounded-xl overflow-hidden bg-gray-100 border-2 transition-all ${
                         isSelected
                           ? 'border-fracht-blue shadow-lg ring-4 ring-fracht-blue/20'
+                          : isPendingDelete
+                          ? 'border-red-500 shadow-lg ring-4 ring-red-500/20'
                           : 'border-gray-200 hover:border-fracht-blue/40'
                       }`}
                     >
@@ -357,7 +397,9 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
                           className="w-full h-full object-contain"
                         />
                         {/* Overlay au survol */}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                        <div className={`absolute inset-0 transition-colors ${
+                          isPendingDelete ? 'bg-red-500/20' : 'bg-black/0 group-hover:bg-black/10'
+                        }`} />
                       </div>
 
                       {/* Nom de l'emplacement */}
@@ -367,8 +409,21 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
                         </p>
                       </div>
 
+                      {/* Bouton de suppression */}
+                      <button
+                        onClick={(e) => handleDeleteClick(e, location.id)}
+                        className={`absolute top-2 left-2 p-1.5 rounded-lg transition-all ${
+                          isPendingDelete
+                            ? 'bg-red-500 text-white shadow-lg'
+                            : 'bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500'
+                        }`}
+                        title={isPendingDelete ? 'Cliquer à nouveau pour confirmer la suppression' : 'Supprimer l\'emplacement'}
+                      >
+                        <HiTrash className="w-4 h-4" />
+                      </button>
+
                       {/* Check icon si sélectionné */}
-                      {isSelected && (
+                      {isSelected && !isPendingDelete && (
                         <motion.div
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}
@@ -376,6 +431,19 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
                         >
                           <div className="bg-fracht-blue rounded-full p-1 shadow-lg">
                             <HiCheckCircle className="w-5 h-5 text-white" />
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* Indicateur de confirmation de suppression */}
+                      {isPendingDelete && (
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="absolute top-2 right-2"
+                        >
+                          <div className="bg-red-500 rounded-full p-1 shadow-lg">
+                            <HiX className="w-5 h-5 text-white" />
                           </div>
                         </motion.div>
                       )}

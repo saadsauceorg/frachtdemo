@@ -61,6 +61,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
   const titleDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef<string>('');
 
   useEffect(() => {
     setTitle(item.title);
@@ -205,6 +206,7 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       setCommentText('');
       setAudioUrl(null);
       setTranscriptionText('');
+      finalTranscriptRef.current = '';
       onUpdate?.(item.id);
     } catch (error) {
       toast.error('Erreur lors de l\'ajout du commentaire');
@@ -347,6 +349,8 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       audioChunksRef.current = [];
       setRecordingTime(0);
       setTranscriptionText('');
+      // Initialiser avec le texte existant dans le champ (si l'utilisateur a déjà tapé quelque chose)
+      finalTranscriptRef.current = commentText.trim();
 
       // Démarrer la transcription avec Web Speech API
       const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -371,12 +375,14 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
           }
 
           if (finalTranscript) {
-            setTranscriptionText((prev) => (prev + finalTranscript).trim());
-            setCommentText((prev) => (prev + finalTranscript).trim());
+            // Ajouter le texte final au texte accumulé
+            finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + finalTranscript).trim();
+            setTranscriptionText(finalTranscriptRef.current);
+            // Mettre à jour le champ de commentaire avec le texte final accumulé
+            setCommentText(finalTranscriptRef.current);
           } else if (interimTranscript) {
-            // Afficher la transcription intermédiaire dans le champ de commentaire
-            const currentText = commentText || '';
-            setCommentText(currentText + interimTranscript);
+            // Afficher la transcription intermédiaire combinée avec le texte final accumulé
+            setCommentText((finalTranscriptRef.current + ' ' + interimTranscript).trim());
           }
         };
 
@@ -428,6 +434,10 @@ export const DetailPanel: React.FC<DetailPanelProps> = ({ item, isOpen, onClose,
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
+      }
+      // S'assurer que le texte final accumulé est dans commentText
+      if (finalTranscriptRef.current) {
+        setCommentText(finalTranscriptRef.current);
       }
     }
   };
