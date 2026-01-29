@@ -84,6 +84,7 @@ export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick, onLo
         isOpen={isProfileOverlayOpen}
         onClose={() => setIsProfileOverlayOpen(false)}
         onLogout={onLogout || (() => {})}
+        userEmail={userEmail}
       />
     </>
   );

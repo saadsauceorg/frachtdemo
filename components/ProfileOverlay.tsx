@@ -7,9 +7,28 @@ interface ProfileOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
+  userEmail?: string;
 }
 
-export const ProfileOverlay: React.FC<ProfileOverlayProps> = ({ isOpen, onClose, onLogout }) => {
+export const ProfileOverlay: React.FC<ProfileOverlayProps> = ({ isOpen, onClose, onLogout, userEmail }) => {
+  // Déterminer les informations utilisateur selon l'email
+  const getUserInfo = () => {
+    if (userEmail === 'faycal.rabia@ma.fracht.africa') {
+      return {
+        name: 'Fayçal Rabia',
+        email: 'faycal.rabia@ma.fracht.africa',
+        avatar: '/avatarfaycal.jpg'
+      };
+    }
+    // Par défaut pour Salma
+    return {
+      name: 'Salma ELkasri',
+      email: 'salma.elkasri@ma.fracht.africa',
+      avatar: '/avatar.jpg'
+    };
+  };
+
+  const userInfo = getUserInfo();
   const [assignedCount, setAssignedCount] = useState<number>(0);
   const [pinnedCount, setPinnedCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,7 +113,7 @@ export const ProfileOverlay: React.FC<ProfileOverlayProps> = ({ isOpen, onClose,
               </div>
               <div className="flex items-center gap-3">
                 <img
-                  src="/avatar.jpg"
+                  src={userInfo.avatar}
                   alt="Avatar"
                   className="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover"
                   onError={(e) => {
@@ -102,8 +121,8 @@ export const ProfileOverlay: React.FC<ProfileOverlayProps> = ({ isOpen, onClose,
                   }}
                 />
                 <div>
-                  <p className="font-semibold fracht-heading">Salma ELkasri</p>
-                  <p className="text-xs text-white/80 fracht-label">salma.elkasri@ma.fracht.africa</p>
+                  <p className="font-semibold fracht-heading">{userInfo.name}</p>
+                  <p className="text-xs text-white/80 fracht-label">{userInfo.email}</p>
                 </div>
               </div>
             </div>
