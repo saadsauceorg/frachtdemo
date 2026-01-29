@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const RESEND_API_KEY = process.env.resend || process.env.RESEND;
+const RESEND_API_KEY = process.env.resend || process.env.RESEND || 're_cd6XYx2X_8oGe2Wst29M8WMiwZ8L1f6Dw';
 if (!RESEND_API_KEY) {
   console.error('❌ Variable d\'environnement "resend" ou "RESEND" manquante.');
   console.error('   Définissez "resend" avec votre clé API Resend (ex: dans .env ou Netlify).');
@@ -38,7 +38,7 @@ async function sendEmail() {
     const { data, error } = await resend.emails.send({
       from: fromEmail,
       to: [toEmail],
-      subject: 'Accès Fracht Assets - Salma El Kasri',
+      subject: 'Accès Fracht Assets - Salma & Fayçal - Créations Marketing & Habillage',
       html: htmlContent,
     });
 

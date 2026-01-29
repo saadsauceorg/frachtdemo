@@ -12,13 +12,15 @@ const App: React.FC = () => {
     return false;
   });
 
-  const handleLogin = () => {
+  const handleLogin = (email: string) => {
     localStorage.setItem('fracht_authenticated', 'true');
+    localStorage.setItem('fracht_user_email', email);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('fracht_authenticated');
+    localStorage.removeItem('fracht_user_email');
     setIsAuthenticated(false);
   };
 
@@ -31,7 +33,11 @@ const App: React.FC = () => {
     );
   }
 
-  return <FrachtConsole onLogout={handleLogout} />;
+  const userEmail = typeof window !== 'undefined' 
+    ? localStorage.getItem('fracht_user_email') || 'Salma.ELkasri@ma.fracht.africa'
+    : 'Salma.ELkasri@ma.fracht.africa';
+
+  return <FrachtConsole onLogout={handleLogout} userEmail={userEmail} />;
 };
 
 export default App;

@@ -12,9 +12,10 @@ import '../styles/fracht.css';
 
 interface FrachtConsoleProps {
   onLogout?: () => void;
+  userEmail?: string;
 }
 
-export const FrachtConsole: React.FC<FrachtConsoleProps> = ({ onLogout }) => {
+export const FrachtConsole: React.FC<FrachtConsoleProps> = ({ onLogout, userEmail }) => {
   const [selectedItem, setSelectedItem] = useState<DesignItem | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [designs, setDesigns] = useState<DesignItem[]>([]);
@@ -341,6 +342,7 @@ export const FrachtConsole: React.FC<FrachtConsoleProps> = ({ onLogout }) => {
           }
         }}
         onLogout={onLogout}
+        userEmail={userEmail}
       />
       <div className="flex">
         <main className="flex-1 pt-16 bg-fracht-cream/50">

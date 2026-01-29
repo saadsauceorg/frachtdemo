@@ -7,12 +7,21 @@ interface HeaderProps {
   onAddDesign?: () => void;
   onDesignClick?: (designId: string) => void;
   onLogout?: () => void;
+  userEmail?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick, onLogout }) => {
+export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick, onLogout, userEmail }) => {
   const [avatarError, setAvatarError] = useState(false);
   const [isActivityDrawerOpen, setIsActivityDrawerOpen] = useState(false);
   const [isProfileOverlayOpen, setIsProfileOverlayOpen] = useState(false);
+  
+  // Déterminer l'avatar selon l'email utilisateur
+  const getAvatarSrc = () => {
+    if (userEmail === 'faycal.rabia@ma.fracht.africa') {
+      return '/avatarfaycal.jpg';
+    }
+    return '/avatar.jpg'; // Par défaut pour Salma
+  };
   
   return (
     <>
@@ -57,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({ onAddDesign, onDesignClick, onLo
           ></div>
         ) : (
           <img 
-            src="/avatar.jpg" 
+            src={getAvatarSrc()} 
             alt="Profil utilisateur"
             className="w-7 h-7 md:w-8 md:h-8 rounded-full shadow-sm object-cover border-2 border-white cursor-pointer hover:ring-2 hover:ring-fracht-blue/50 transition-all"
             onError={() => setAvatarError(true)}

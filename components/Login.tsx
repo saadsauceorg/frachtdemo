@@ -2,8 +2,13 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLogin: (email: string) => void;
 }
+
+const AUTHORIZED_EMAILS = [
+  'Salma.ELkasri@ma.fracht.africa',
+  'faycal.rabia@ma.fracht.africa'
+];
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('Salma.ELkasri@ma.fracht.africa');
@@ -16,7 +21,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       alert('Mot de passe incorrect');
       return;
     }
-    onLogin();
+    if (!AUTHORIZED_EMAILS.includes(email)) {
+      alert('Email non autorisé');
+      return;
+    }
+    onLogin(email);
   };
 
   // Variantes d'animation pour les cercles bleus en arrière-plan
@@ -167,21 +176,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <label className="text-xs font-semibold text-gray-700 block">
                 Email
               </label>
-              <motion.input
-                whileFocus={{ scale: 1.01 }}
-                transition={{ duration: 0.2 }}
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 transition-all"
-                style={{
-                  background: 'linear-gradient(135deg, #E5E9ED 0%, #D1D8DE 100%)',
-                  border: 'none',
-                }}
-                placeholder="votre@email.com"
-                required
-                autoFocus
-              />
+              <div className="relative">
+                <motion.select
+                  whileFocus={{ scale: 1.01 }}
+                  transition={{ duration: 0.2 }}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 pr-10 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-fracht-blue/30 transition-all appearance-none cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(135deg, #E5E9ED 0%, #D1D8DE 100%)',
+                    border: 'none',
+                  }}
+                  required
+                  autoFocus
+                >
+                  {AUTHORIZED_EMAILS.map((emailOption) => (
+                    <option key={emailOption} value={emailOption}>
+                      {emailOption}
+                    </option>
+                  ))}
+                </motion.select>
+                <div 
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderLeft: '4px solid transparent',
+                    borderRight: '4px solid transparent',
+                    borderTop: '6px solid #6B7683',
+                  }}
+                />
+              </div>
             </div>
 
             <div className="space-y-1">
